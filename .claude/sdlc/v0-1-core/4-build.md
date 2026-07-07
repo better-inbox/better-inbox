@@ -2,7 +2,13 @@
 
 **Started**: 2026-07-07
 **Plan**: .claude/sdlc/v0-1-core/3-plan.md
-**Status**: Chunks 1–5 complete (18/18 units green); chunk 6 in progress (demo app via subagent; publish gated on user OTP)
+**Status**: Complete — 19 tests green (18 planned units + 1 added), demo app built and verified end-to-end over HTTP. Publish gated on user OTP; GitHub org + launch GIF remain manual.
+
+**Chunk 6 findings (demo-as-dogfood, via subagent + own verification):**
+- PACKAGING BUG (fixed): two parallel tsup configs raced — config 1's `clean: true` could delete config 2's emitted `dist/react/*.d.ts`. Fix: `rm -rf dist` in the build script, `clean: false` in tsup, plus a post-build assertion that all six dist files exist.
+- CLIENT TYPE INCOMPAT (fixed): an *optional* endpoint body (`markAllRead`) makes better-auth's generated client signature incompatible with plain `{ organizationId }` calls. Body made required (`{}` ok); new full-stack test pins the client call shape (test #19).
+- README: migrate command needs `--config` pointer (fixed); demo README notes better-sqlite3 can't run under the Bun runtime (seed uses Node).
+- Demo verified over real HTTP: sign-in 200, unread-count/list/mark-all-read round-trips 200 (mark-all-read requires Origin header + JSON body — better-auth CSRF working as designed).
 **Drift check**: base dbe2201 → HEAD 32fef66 at build start; only plan artifact changed. Clean.
 
 ## TDD Progress
