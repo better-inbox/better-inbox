@@ -1,0 +1,22 @@
+{
+  "name": "better-inbox-video",
+  "private": true,
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render Demo out/demo.mp4",
+    "render:gif": "remotion render Demo out/demo.gif --codec=gif --every-nth-frame=2 --scale=0.5"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "@remotion/tailwind-v4": "^4.0.0",
+    "better-inbox": "file:..",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "^4.0.0",
+    "tailwindcss": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "typescript": "^5.9.0"
+  }
+}
