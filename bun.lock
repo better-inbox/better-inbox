@@ -8,6 +8,7 @@
         "zod": "^4.4.3",
       },
       "devDependencies": {
+        "@better-auth/core": "^1.6.23",
         "@better-auth/memory-adapter": "^1.6.23",
         "@testing-library/react": "^16.3.2",
         "@types/react": "^19.2.17",
