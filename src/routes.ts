@@ -31,19 +31,66 @@ export const notify = (options: ResolvedInboxOptions) =>
     },
     async (ctx) => {
       const { userId, organizationId, roles, ...payload } = ctx.body;
-      const notification = await ctx.context.adapter.create<
-        Omit<Notification, "id">,
-        Notification
-      >({
-        model: "notification",
-        data: {
-          userId: userId!,
-          ...payload,
-          read: false,
-          createdAt: new Date(),
-        },
+
+      const createFor = (targetUserId: string) =>
+        ctx.context.adapter.create<Omit<Notification, "id">, Notification>({
+          model: "notification",
+          data: {
+            userId: targetUserId,
+            ...(organizationId ? { organizationId } : {}),
+            ...payload,
+            read: false,
+            createdAt: new Date(),
+          },
+        });
+
+      if (!organizationId) {
+        const notification = await createFor(userId!);
+        return { count: 1, notifications: [notification] };
+      }
+
+      const hasOrgPlugin = ctx.context.options.plugins?.some(
+        (plugin) => plugin.id === "organization",
+      );
+      if (!hasOrgPlugin) {
+        throw APIError.from(
+          "BAD_REQUEST",
+          INBOX_ERROR_CODES.ORGANIZATION_PLUGIN_REQUIRED,
+        );
+      }
+
+      const members = await ctx.context.adapter.findMany<{
+        userId: string;
+        role: string;
+      }>({
+        model: "member",
+        where: [{ field: "organizationId", value: organizationId }],
+        limit: options.maxFanout + 1,
       });
-      return { count: 1, notifications: [notification] };
+      if (members.length > options.maxFanout) {
+        throw APIError.from(
+          "BAD_REQUEST",
+          INBOX_ERROR_CODES.FAN_OUT_LIMIT_EXCEEDED,
+        );
+      }
+
+      const targets = roles?.length
+        ? members.filter((member) =>
+            member.role.split(",").some((role) => roles.includes(role)),
+          )
+        : members;
+      if (targets.length === 0) {
+        throw APIError.from(
+          "BAD_REQUEST",
+          INBOX_ERROR_CODES.ORGANIZATION_HAS_NO_MEMBERS,
+        );
+      }
+
+      const notifications: Notification[] = [];
+      for (const member of targets) {
+        notifications.push(await createFor(member.userId));
+      }
+      return { count: notifications.length, notifications };
     },
   );
 
@@ -65,12 +112,16 @@ export const listNotifications = () =>
       use: [sessionMiddleware],
     },
     async (ctx) => {
-      const { filter = "all", limit = 20, offset = 0 } = ctx.query ?? {};
+      const { filter = "all", limit = 20, offset = 0, organizationId } =
+        ctx.query ?? {};
       const where: Where[] = [
         { field: "userId", value: ctx.context.session.user.id },
       ];
       if (filter === "unread") {
         where.push({ field: "read", value: false });
+      }
+      if (organizationId) {
+        where.push({ field: "organizationId", value: organizationId });
       }
       const rows = await ctx.context.adapter.findMany<Notification>({
         model: "notification",
