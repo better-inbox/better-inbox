@@ -1,0 +1,63 @@
+{
+  "name": "better-inbox",
+  "version": "0.1.0",
+  "description": "In-app notifications for better-auth apps. One plugin, one migration, one component — notifications live in your database, addressed to your users.",
+  "license": "MIT",
+  "author": "Jarod Stewart <stewartjarod@gmail.com>",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js",
+      "require": "./dist/client.cjs"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js",
+      "require": "./dist/react/index.cjs"
+    }
+  },
+  "files": ["dist", "README.md", "llms.txt"],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["better-auth", "notifications", "inbox", "in-app", "react", "plugin"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/better-inbox/better-inbox"
+  },
+  "homepage": "https://better-inbox.dev",
+  "peerDependencies": {
+    "better-auth": "^1.6.23",
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@better-auth/memory-adapter": "^1.6.23",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "happy-dom": "^20.10.6",
+    "react-dom": "^19.2.7",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9",
+    "vitest": "^4.1.10"
+  }
+}
