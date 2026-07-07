@@ -1,0 +1,47 @@
+# better-inbox
+
+In-app notifications as a better-auth plugin. Notifications are rows in the app's own database (any better-auth adapter), addressed by better-auth user ids, optionally org-scoped via the better-auth organization plugin.
+
+## Install & wire
+
+npm install better-inbox
+
+// server: lib/auth.ts
+import { inbox } from "better-inbox";
+export const auth = betterAuth({ plugins: [inbox()] });
+// then: npx @better-auth/cli migrate  (creates the `notification` table)
+
+// client: lib/auth-client.ts
+import { inboxClient } from "better-inbox/client";
+export const authClient = createAuthClient({ plugins: [inboxClient()] });
+
+// UI (client component)
+import { InboxButton } from "better-inbox/react";
+<InboxButton client={authClient} onNavigate={(href) => router.push(href)} />
+
+## Send (server-only, never an HTTP route)
+
+await auth.api.notify({ body: { userId, type: "comment.reply", title: "...", href: "/x", body: "...", data: {...} } });
+// org fan-out (requires better-auth organization plugin); one row per member:
+await auth.api.notify({ body: { organizationId, roles: ["owner","admin"], type: "billing.payment_failed", title: "..." } });
+// exactly one of userId | organizationId. Fan-out capped at inbox({ maxFanout: 1000 }).
+
+## Read/mutate (session-scoped to caller)
+
+auth.api.listNotifications({ headers, query: { filter: "unread"|"all", limit: 20, offset: 0, organizationId } }) → { notifications, hasMore }
+auth.api.markRead({ headers, body: { id } })
+auth.api.markAllRead({ headers, body: { organizationId? } })
+auth.api.unreadCount({ headers, query: { organizationId? } }) → { count }
+// same methods on the client: authClient.inbox.list / markRead / markAllRead / unreadCount
+
+## React hook
+
+const { notifications, unreadCount, isLoading, hasMore, loadMore, markRead, markAllRead, refresh } = useInbox(authClient, { pollInterval: 30000, pageSize: 20, organizationId });
+// polling refetches unread count; full refresh on window focus and panel open. markRead/markAllRead are optimistic.
+
+## Notes
+
+- notification fields: id, userId, organizationId?, type, title, body?, href?, data? (json), read (boolean), createdAt
+- components styled with shadcn CSS variables (bg-popover, text-muted-foreground, ...); zero runtime deps; shadcn not required
+- recommend manual index on (userId, createdAt)
+- community plugin, not affiliated with better-auth
