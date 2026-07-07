@@ -33,7 +33,7 @@ export type InboxFetchClient = {
     markRead: (input: {
       id: string;
     }) => Promise<{ data: unknown; error: unknown }>;
-    markAllRead: (input?: {
+    markAllRead: (input: {
       organizationId?: string;
     }) => Promise<{ data: unknown; error: unknown }>;
   };
@@ -122,7 +122,7 @@ export function useInbox(
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     setUnreadCount(0);
     await clientRef.current.inbox.markAllRead(
-      organizationId ? { organizationId } : undefined,
+      organizationId ? { organizationId } : {},
     );
   }, [organizationId]);
 

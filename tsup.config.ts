@@ -8,7 +8,9 @@ export default defineConfig([
     },
     format: ["esm", "cjs"],
     dts: true,
-    clean: true,
+    // clean is done in the build script — with two parallel configs, tsup's
+    // own clean races the other config's output and can delete emitted files
+    clean: false,
     external: ["react", "better-auth", "zod"],
   },
   {

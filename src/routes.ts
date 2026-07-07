@@ -169,7 +169,7 @@ export const markAllRead = () =>
     "/inbox/mark-all-read",
     {
       method: "POST",
-      body: z.object({ organizationId: z.string().optional() }).optional(),
+      body: z.object({ organizationId: z.string().optional() }),
       use: [sessionMiddleware],
     },
     async (ctx) => {
@@ -177,7 +177,7 @@ export const markAllRead = () =>
         { field: "userId", value: ctx.context.session.user.id },
         { field: "read", value: false },
       ];
-      if (ctx.body?.organizationId) {
+      if (ctx.body.organizationId) {
         where.push({ field: "organizationId", value: ctx.body.organizationId });
       }
       const count = await ctx.context.adapter.updateMany({

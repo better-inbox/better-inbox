@@ -57,4 +57,21 @@ describe("inboxClient", () => {
     const after = await client.inbox.unreadCount();
     expect(after.data?.count).toBe(0);
   });
+
+  it("markAllRead round-trip zeroes the unread count", async () => {
+    const auth = createTestAuth();
+    const alice = await signUpUser(auth, "alice@example.com");
+    for (const title of ["a", "b"]) {
+      await auth.api.notify({
+        body: { userId: alice.user.id, type: "test", title },
+      });
+    }
+
+    const client = createTestClient(auth, alice.headers);
+    const marked = await client.inbox.markAllRead({});
+    expect(marked.error).toBeNull();
+
+    const after = await client.inbox.unreadCount();
+    expect(after.data?.count).toBe(0);
+  });
 });

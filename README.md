@@ -31,8 +31,10 @@ export const auth = betterAuth({
 **2. Migrate.** The plugin declares the `notification` table; your existing better-auth workflow creates it:
 
 ```
-npx @better-auth/cli migrate   # or: npx @better-auth/cli generate
+npx @better-auth/cli migrate --config lib/auth.ts   # or: generate, for drizzle/prisma
 ```
+
+(Point `--config` at your better-auth config if the CLI doesn't auto-detect it.)
 
 **3. Add the client plugin:**
 

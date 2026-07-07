@@ -27,7 +27,7 @@
   },
   "files": ["dist", "README.md", "llms.txt"],
   "scripts": {
-    "build": "tsup",
+    "build": "rm -rf dist && tsup && node -e \"['index.d.ts','client.d.ts','react/index.d.ts','react/index.js','index.js','client.js'].forEach(f => require('fs').accessSync('dist/' + f))\"",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
