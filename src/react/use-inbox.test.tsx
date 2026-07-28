@@ -73,6 +73,56 @@ describe("useInbox", () => {
     }
   });
 
+  // A backgrounded tab keeps polling while the network comes and goes, so the
+  // transport rejects (TypeError) rather than resolving to { data, error }.
+  it("surfaces a rejected poll as error state instead of an unhandled rejection", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const client = makeMockClient();
+      const { result } = renderHook(() => useInbox(client, { pollInterval: 20 }));
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(result.current.unreadCount).toBe(2);
+
+      const offline = new TypeError("Failed to fetch");
+      client.inbox.unreadCount.mockRejectedValueOnce(offline);
+
+      await waitFor(() => expect(result.current.error).toBe(offline));
+
+      // give anything that escaped the hook time to reach the process handler
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(unhandled).toEqual([]);
+
+      // the last known count survives a failed poll
+      expect(result.current.unreadCount).toBe(2);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("keeps polling after a failed poll and recovers", async () => {
+    const client = makeMockClient();
+    // the very first refresh fails, i.e. the tab was already offline on mount
+    client.inbox.unreadCount.mockRejectedValueOnce(
+      new TypeError("Failed to fetch"),
+    );
+
+    const { result } = renderHook(() => useInbox(client, { pollInterval: 20 }));
+
+    // a failed mount refresh must not strand the consumer in a loading state
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.error).toBeInstanceOf(TypeError);
+
+    // network returns: the interval is still alive and picks the count back up
+    client.inbox.unreadCount.mockResolvedValue({
+      data: { count: 7 },
+      error: null,
+    });
+    await waitFor(() => expect(result.current.unreadCount).toBe(7));
+  });
+
   it("optimistically marks read and decrements the unread count", async () => {
     const client = makeMockClient();
     let resolveMarkRead: (v: { data: unknown; error: null }) => void;

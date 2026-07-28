@@ -80,18 +80,23 @@ export function useInbox(
   }, [organizationId]);
 
   const refresh = useCallback(async () => {
-    const [list] = await Promise.all([
-      clientRef.current.inbox.list({ query: listQuery(0) }),
-      refreshUnreadCount(),
-    ]);
-    if (list.error) {
-      setError(list.error);
-    } else if (list.data) {
-      setError(null);
-      setNotifications(list.data.notifications);
-      setHasMore(list.data.hasMore);
+    try {
+      const [list] = await Promise.all([
+        clientRef.current.inbox.list({ query: listQuery(0) }),
+        refreshUnreadCount(),
+      ]);
+      if (list.error) {
+        setError(list.error);
+      } else if (list.data) {
+        setError(null);
+        setNotifications(list.data.notifications);
+        setHasMore(list.data.hasMore);
+      }
+    } finally {
+      // a transport failure still ends the initial load, otherwise a client
+      // that mounts while offline renders a spinner forever
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, [listQuery, refreshUnreadCount]);
 
   const notificationsRef = useRef(notifications);
@@ -126,21 +131,33 @@ export function useInbox(
     );
   }, [organizationId]);
 
+  // These three triggers fire on their own, so nothing is awaiting them. The
+  // transport rejects (rather than resolving to { error }) when the request
+  // never reaches the server — an offline or backgrounded tab — and without a
+  // catch that surfaces as an unhandled rejection in the consumer's app.
+  const captureBackgroundError = useCallback((reason: unknown) => {
+    setError(() => reason);
+  }, []);
+
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    refresh().catch(captureBackgroundError);
+  }, [refresh, captureBackgroundError]);
 
   useEffect(() => {
     if (pollInterval <= 0) return;
-    const interval = setInterval(() => void refreshUnreadCount(), pollInterval);
+    const interval = setInterval(() => {
+      refreshUnreadCount().catch(captureBackgroundError);
+    }, pollInterval);
     return () => clearInterval(interval);
-  }, [pollInterval, refreshUnreadCount]);
+  }, [pollInterval, refreshUnreadCount, captureBackgroundError]);
 
   useEffect(() => {
-    const onFocus = () => void refresh();
+    const onFocus = () => {
+      refresh().catch(captureBackgroundError);
+    };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [refresh]);
+  }, [refresh, captureBackgroundError]);
 
   return {
     notifications,
