@@ -44,6 +44,8 @@ export type UseInboxOptions = {
   pollInterval?: number;
   /** Page size for the notification list. @default 20 */
   pageSize?: number;
+  /** Only fetch unread notifications, so a page is a full page. @default "all" */
+  filter?: "unread" | "all";
   /** Scope everything to one organization. */
   organizationId?: string;
 };
@@ -52,7 +54,12 @@ export function useInbox(
   client: InboxFetchClient,
   options: UseInboxOptions = {},
 ) {
-  const { pollInterval = 30_000, pageSize = 20, organizationId } = options;
+  const {
+    pollInterval = 30_000,
+    pageSize = 20,
+    filter = "all",
+    organizationId,
+  } = options;
 
   const [notifications, setNotifications] = useState<InboxNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -67,9 +74,10 @@ export function useInbox(
     (offset: number): ListQuery => ({
       limit: pageSize,
       offset,
+      ...(filter === "unread" ? { filter } : {}),
       ...(organizationId ? { organizationId } : {}),
     }),
-    [pageSize, organizationId],
+    [pageSize, filter, organizationId],
   );
 
   const refreshUnreadCount = useCallback(async () => {
@@ -103,14 +111,25 @@ export function useInbox(
   notificationsRef.current = notifications;
 
   const loadMore = useCallback(async () => {
+    // Under the unread filter the server's result set shrinks as we mark things
+    // read, so paging by list length would skip that many rows. The unread
+    // notifications we hold are still the head of that set — count only those.
+    const loaded =
+      filter === "unread"
+        ? notificationsRef.current.filter((n) => !n.read).length
+        : notificationsRef.current.length;
     const res = await clientRef.current.inbox.list({
-      query: listQuery(notificationsRef.current.length),
+      query: listQuery(loaded),
     });
     if (res.data) {
-      setNotifications((prev) => [...prev, ...res.data!.notifications]);
+      const page = res.data.notifications;
+      setNotifications((prev) => {
+        const seen = new Set(prev.map((n) => n.id));
+        return [...prev, ...page.filter((n) => !seen.has(n.id))];
+      });
       setHasMore(res.data.hasMore);
     }
-  }, [listQuery]);
+  }, [listQuery, filter]);
 
   const markRead = useCallback(async (id: string) => {
     const target = notificationsRef.current.find((n) => n.id === id);
@@ -165,6 +184,7 @@ export function useInbox(
     isLoading,
     hasMore,
     error,
+    filter,
     refresh,
     loadMore,
     markRead,

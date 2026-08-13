@@ -1,6 +1,12 @@
 // @vitest-environment happy-dom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { InboxButton } from "./inbox-button";
 import type { InboxFetchClient } from "./use-inbox";
 
@@ -41,6 +47,9 @@ function makeMockClient(): InboxFetchClient {
 }
 
 describe("InboxButton", () => {
+  // vitest runs without globals, so RTL never auto-cleans between tests
+  afterEach(cleanup);
+
   it("shows the unread badge, opens the panel, and marks all read", async () => {
     const client = makeMockClient();
     render(<InboxButton client={client} />);
@@ -56,5 +65,20 @@ describe("InboxButton", () => {
     fireEvent.click(screen.getByRole("button", { name: /mark all read/i }));
     expect(client.inbox.markAllRead).toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByText("2")).toBeNull());
+  });
+
+  it("fetches only unread rows and drops the tabs when filtered", async () => {
+    const client = makeMockClient();
+    render(<InboxButton client={client} filter="unread" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+    await waitFor(() =>
+      expect(screen.getByText("First notification")).toBeTruthy(),
+    );
+
+    expect(client.inbox.list).toHaveBeenCalledWith({
+      query: { limit: 20, offset: 0, filter: "unread" },
+    });
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
   });
 });

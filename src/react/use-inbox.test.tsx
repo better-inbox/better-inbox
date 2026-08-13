@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { useInbox, type InboxFetchClient } from "./use-inbox";
 
@@ -121,6 +121,97 @@ describe("useInbox", () => {
       error: null,
     });
     await waitFor(() => expect(result.current.unreadCount).toBe(7));
+  });
+
+  it("passes the unread filter through to the list query", async () => {
+    const client = makeMockClient();
+    const { result } = renderHook(() =>
+      useInbox(client, { filter: "unread", pageSize: 5 }),
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(client.inbox.list).toHaveBeenCalledWith({
+      query: { limit: 5, offset: 0, filter: "unread" },
+    });
+  });
+
+  it("refetches when the filter changes", async () => {
+    const client = makeMockClient();
+    const { result, rerender } = renderHook(
+      ({ filter }: { filter: "unread" | "all" }) => useInbox(client, { filter }),
+      { initialProps: { filter: "all" as "unread" | "all" } },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(client.inbox.list).toHaveBeenCalledWith({
+      query: { limit: 20, offset: 0 },
+    });
+
+    rerender({ filter: "unread" });
+    await waitFor(() =>
+      expect(client.inbox.list).toHaveBeenCalledWith({
+        query: { limit: 20, offset: 0, filter: "unread" },
+      }),
+    );
+  });
+
+  // The server's unread set shrinks under us as rows are marked read, so paging
+  // by list length would skip exactly as many rows as the user has clicked.
+  it("offsets by unread rows held when filtering to unread", async () => {
+    const client = makeMockClient([
+      makeNotification("n1"),
+      makeNotification("n2"),
+    ]);
+    const { result } = renderHook(() =>
+      useInbox(client, { filter: "unread", pageSize: 2 }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.markRead("n1");
+    });
+    client.inbox.list.mockResolvedValueOnce({
+      data: { notifications: [makeNotification("n3")], hasMore: false },
+      error: null,
+    });
+    await act(async () => {
+      await result.current.loadMore();
+    });
+
+    expect(client.inbox.list).toHaveBeenLastCalledWith({
+      query: { limit: 2, offset: 1, filter: "unread" },
+    });
+    await waitFor(() =>
+      expect(result.current.notifications.map((n) => n.id)).toEqual([
+        "n1",
+        "n2",
+        "n3",
+      ]),
+    );
+  });
+
+  it("does not append a row it already holds", async () => {
+    const client = makeMockClient();
+    const { result } = renderHook(() => useInbox(client, { pageSize: 2 }));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // a notification arrived since the first page, shifting everything down one
+    client.inbox.list.mockResolvedValueOnce({
+      data: {
+        notifications: [makeNotification("n2"), makeNotification("n3")],
+        hasMore: false,
+      },
+      error: null,
+    });
+    await result.current.loadMore();
+
+    await waitFor(() =>
+      expect(result.current.notifications.map((n) => n.id)).toEqual([
+        "n1",
+        "n2",
+        "n3",
+      ]),
+    );
   });
 
   it("optimistically marks read and decrements the unread count", async () => {
