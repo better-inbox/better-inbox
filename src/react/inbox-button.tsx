@@ -9,6 +9,7 @@ export type InboxButtonProps = {
   onNavigate?: (href: string) => void;
   renderItem?: (notification: InboxNotification) => ReactNode;
   pollInterval?: number;
+  filter?: "unread" | "all";
   organizationId?: string;
   className?: string;
 };
@@ -18,11 +19,13 @@ export function InboxButton({
   onNavigate,
   renderItem,
   pollInterval,
+  filter,
   organizationId,
   className,
 }: InboxButtonProps) {
   const inbox = useInbox(client, {
     ...(pollInterval !== undefined ? { pollInterval } : {}),
+    ...(filter !== undefined ? { filter } : {}),
     ...(organizationId !== undefined ? { organizationId } : {}),
   });
   const [open, setOpen] = useState(false);

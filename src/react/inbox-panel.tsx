@@ -29,8 +29,13 @@ export function InboxPanel({
   className,
 }: InboxPanelProps) {
   const [tab, setTab] = useState<"all" | "unread">("all");
+  // the hook already fetched only unread rows, so an "all" tab would show the
+  // same list under a lying label
+  const showTabs = inbox.filter !== "unread";
+  // rows already marked read stay put until the next refresh, so the list does
+  // not jump out from under the pointer mid-click
   const visible =
-    tab === "unread"
+    showTabs && tab === "unread"
       ? inbox.notifications.filter((n) => !n.read)
       : inbox.notifications;
 
@@ -39,24 +44,28 @@ export function InboxPanel({
       className={`flex w-96 max-w-[calc(100vw-2rem)] flex-col rounded-lg border border-border bg-popover text-popover-foreground shadow-md ${className ?? ""}`}
     >
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <div className="flex gap-1" role="tablist">
-          {(["all", "unread"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              role="tab"
-              aria-selected={tab === value}
-              onClick={() => setTab(value)}
-              className={`rounded-md px-2 py-1 text-sm capitalize ${
-                tab === value
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {value}
-            </button>
-          ))}
-        </div>
+        {showTabs ? (
+          <div className="flex gap-1" role="tablist">
+            {(["all", "unread"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={tab === value}
+                onClick={() => setTab(value)}
+                className={`rounded-md px-2 py-1 text-sm capitalize ${
+                  tab === value
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <span className="px-2 py-1 text-sm text-muted-foreground">Unread</span>
+        )}
         <button
           type="button"
           onClick={() => void inbox.markAllRead()}

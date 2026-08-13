@@ -114,8 +114,9 @@ Every session endpoint is scoped to the caller — users can only ever see and m
 
 ### React (`better-inbox/react`)
 
-- `<InboxButton client={authClient} />` — bell + badge + panel. Props: `onNavigate`, `renderItem`, `pollInterval` (default 30s; unread count only, full refresh on window focus and panel open), `organizationId`, `className`.
-- `useInbox(client, options)` — build your own UI: `{ notifications, unreadCount, isLoading, hasMore, loadMore, markRead, markAllRead, refresh }`.
+- `<InboxButton client={authClient} />` — bell + badge + panel. Props: `onNavigate`, `renderItem`, `pollInterval` (default 30s; unread count only, full refresh on window focus and panel open), `filter`, `organizationId`, `className`.
+- `useInbox(client, options)` — build your own UI: `{ notifications, unreadCount, isLoading, hasMore, loadMore, markRead, markAllRead, refresh }`. Options: `pollInterval`, `pageSize`, `filter`, `organizationId`.
+- `filter: "unread"` fetches only unread rows, so a page is a full page — `useInbox(authClient, { filter: "unread", pageSize: 5 })` yields five unread notifications instead of five rows you then filter down to however many are unread. Rows you mark read stay in the list until the next `refresh()`, and `loadMore()` accounts for them when paging.
 - `<InboxPanel inbox={useInbox(...)} />` — the panel without the bell.
 
 ## Performance note
