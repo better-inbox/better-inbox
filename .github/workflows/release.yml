@@ -5,8 +5,8 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
-  id-token: write # npm provenance
+  contents: write # gh release create
+  id-token: write # npm trusted publishing (OIDC)
 
 jobs:
   publish:
@@ -16,8 +16,12 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      # trusted publishing needs npm >= 11.5.1, newer than what node 24 bundles
+      - run: npm install -g npm@latest
 
       - run: bun install --frozen-lockfile
 
@@ -36,9 +40,9 @@ jobs:
       - run: bun run test
       - run: bun run build
 
-      - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # no token: npmjs.com trusts this repo + workflow over OIDC, and publishing
+      # that way attaches provenance on its own
+      - run: npm publish
 
       - run: gh release create "$GITHUB_REF_NAME" --generate-notes
         env:
