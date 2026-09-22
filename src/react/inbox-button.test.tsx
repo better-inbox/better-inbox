@@ -10,8 +10,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { InboxButton } from "./inbox-button";
 import type { InboxFetchClient } from "./use-inbox";
 
-function makeMockClient(): InboxFetchClient {
-  const notifications = [
+function makeMockClient(
+  notifications = [
     {
       id: "n1",
       userId: "u1",
@@ -28,7 +28,8 @@ function makeMockClient(): InboxFetchClient {
       read: false,
       createdAt: new Date().toISOString(),
     },
-  ];
+  ],
+): InboxFetchClient {
   return {
     inbox: {
       list: vi.fn().mockResolvedValue({
@@ -80,5 +81,78 @@ describe("InboxButton", () => {
       query: { limit: 20, offset: 0, filter: "unread" },
     });
     expect(screen.queryAllByRole("tab")).toHaveLength(0);
+  });
+
+  it("opens on the unread tab, first, and fetches unread rows", async () => {
+    const client = makeMockClient();
+    render(<InboxButton client={client} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+    await waitFor(() =>
+      expect(screen.getByText("First notification")).toBeTruthy(),
+    );
+
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual([
+      "unread",
+      "all",
+    ]);
+    expect(
+      screen
+        .getByRole("tab", { name: /unread/i })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(client.inbox.list).toHaveBeenCalledWith({
+      query: { limit: 20, offset: 0, filter: "unread" },
+    });
+  });
+
+  it("switching to all refetches without the unread filter", async () => {
+    const client = makeMockClient();
+    render(<InboxButton client={client} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+    await waitFor(() =>
+      expect(screen.getByText("First notification")).toBeTruthy(),
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /all/i }));
+
+    await waitFor(() =>
+      expect(client.inbox.list).toHaveBeenCalledWith({
+        query: { limit: 20, offset: 0 },
+      }),
+    );
+    expect(
+      screen.getByRole("tab", { name: /all/i }).getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("a controlled unread view does not hide rows the server returned", async () => {
+    const client = makeMockClient([
+      {
+        id: "n1",
+        userId: "u1",
+        type: "test",
+        title: "First notification",
+        read: false,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: "n2",
+        userId: "u1",
+        type: "test",
+        title: "Second notification",
+        read: true,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    render(<InboxButton client={client} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+    await waitFor(() =>
+      expect(screen.getByText("First notification")).toBeTruthy(),
+    );
+
+    expect(screen.getByText("Second notification")).toBeTruthy();
   });
 });

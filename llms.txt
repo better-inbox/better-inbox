@@ -39,6 +39,7 @@ auth.api.unreadCount({ headers, query: { organizationId? } }) → { count }
 const { notifications, unreadCount, isLoading, hasMore, loadMore, markRead, markAllRead, refresh } = useInbox(authClient, { pollInterval: 30000, pageSize: 20, filter: "unread"|"all", organizationId });
 // polling refetches unread count; full refresh on window focus and panel open. markRead/markAllRead are optimistic.
 // filter: "unread" fetches unread rows only, so pageSize is the count you actually get. Locally-read rows stay until refresh(); loadMore() offsets by unread rows held. Changing filter refetches. InboxButton takes the same filter prop and hides its all/unread tabs when set to "unread".
+// InboxButton opens on the "unread" tab (server-filtered), tabs ordered unread, all. InboxPanel accepts view/onViewChange; uncontrolled it defaults to "unread".
 
 ## Notes
 

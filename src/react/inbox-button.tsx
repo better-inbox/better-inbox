@@ -23,9 +23,14 @@ export function InboxButton({
   organizationId,
   className,
 }: InboxButtonProps) {
+  const [view, setView] = useState<"unread" | "all">("unread");
+  // a filter prop locks the panel to that list; without one, the tabs choose
+  // what to fetch, so the unread tab is a real page of unread rows
+  const locked = filter !== undefined;
+  const effectiveFilter = locked ? filter : view;
   const inbox = useInbox(client, {
     ...(pollInterval !== undefined ? { pollInterval } : {}),
-    ...(filter !== undefined ? { filter } : {}),
+    filter: effectiveFilter,
     ...(organizationId !== undefined ? { organizationId } : {}),
   });
   const [open, setOpen] = useState(false);
@@ -90,6 +95,7 @@ export function InboxButton({
             inbox={inbox}
             onNavigate={onNavigate}
             renderItem={renderItem}
+            {...(locked ? {} : { view, onViewChange: setView })}
           />
         </div>
       ) : null}

@@ -20,6 +20,8 @@ export type InboxPanelProps = {
   onNavigate?: ((href: string) => void) | undefined;
   renderItem?: ((notification: InboxNotification) => ReactNode) | undefined;
   className?: string | undefined;
+  view?: "unread" | "all" | undefined;
+  onViewChange?: ((view: "unread" | "all") => void) | undefined;
 };
 
 export function InboxPanel({
@@ -27,15 +29,21 @@ export function InboxPanel({
   onNavigate,
   renderItem,
   className,
+  view,
+  onViewChange,
 }: InboxPanelProps) {
-  const [tab, setTab] = useState<"all" | "unread">("all");
-  // the hook already fetched only unread rows, so an "all" tab would show the
-  // same list under a lying label
-  const showTabs = inbox.filter !== "unread";
+  const [localView, setLocalView] = useState<"unread" | "all">("unread");
+  const controlled = onViewChange !== undefined;
+  const tab = controlled ? (view ?? "unread") : localView;
+  const setTab = controlled ? onViewChange : setLocalView;
+  // a caller that owns the view fetched unread rows server-side, so its tabs
+  // stay even though inbox.filter is "unread"; an uncontrolled panel whose hook
+  // was locked to unread would show the same list under an "all" label
+  const showTabs = controlled || inbox.filter !== "unread";
   // rows already marked read stay put until the next refresh, so the list does
   // not jump out from under the pointer mid-click
   const visible =
-    showTabs && tab === "unread"
+    !controlled && showTabs && tab === "unread"
       ? inbox.notifications.filter((n) => !n.read)
       : inbox.notifications;
 
@@ -46,7 +54,7 @@ export function InboxPanel({
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         {showTabs ? (
           <div className="flex gap-1" role="tablist">
-            {(["all", "unread"] as const).map((value) => (
+            {(["unread", "all"] as const).map((value) => (
               <button
                 key={value}
                 type="button"
