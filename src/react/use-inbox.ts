@@ -70,6 +70,14 @@ export function useInbox(
   const clientRef = useRef(client);
   clientRef.current = client;
 
+  // Every request belongs to the scope it was made for. When the scope changes
+  // mid-flight (an organizationId that resolves after mount, a tab switch), the
+  // old response can land after the new one; applying it would show another
+  // scope's count and rows. Callbacks capture their scope and drop stale results.
+  const scope = `${organizationId ?? ""}|${filter}|${pageSize}`;
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+
   const listQuery = useCallback(
     (offset: number): ListQuery => ({
       limit: pageSize,
@@ -84,8 +92,8 @@ export function useInbox(
     const res = await clientRef.current.inbox.unreadCount(
       organizationId ? { query: { organizationId } } : undefined,
     );
-    if (res.data) setUnreadCount(res.data.count);
-  }, [organizationId]);
+    if (res.data && scopeRef.current === scope) setUnreadCount(res.data.count);
+  }, [organizationId, scope]);
 
   const refresh = useCallback(async () => {
     try {
@@ -93,6 +101,7 @@ export function useInbox(
         clientRef.current.inbox.list({ query: listQuery(0) }),
         refreshUnreadCount(),
       ]);
+      if (scopeRef.current !== scope) return;
       if (list.error) {
         setError(list.error);
       } else if (list.data) {
@@ -103,9 +112,9 @@ export function useInbox(
     } finally {
       // a transport failure still ends the initial load, otherwise a client
       // that mounts while offline renders a spinner forever
-      setIsLoading(false);
+      if (scopeRef.current === scope) setIsLoading(false);
     }
-  }, [listQuery, refreshUnreadCount]);
+  }, [listQuery, refreshUnreadCount, scope]);
 
   const notificationsRef = useRef(notifications);
   notificationsRef.current = notifications;
@@ -121,7 +130,7 @@ export function useInbox(
     const res = await clientRef.current.inbox.list({
       query: listQuery(loaded),
     });
-    if (res.data) {
+    if (res.data && scopeRef.current === scope) {
       const page = res.data.notifications;
       setNotifications((prev) => {
         const seen = new Set(prev.map((n) => n.id));
@@ -129,7 +138,7 @@ export function useInbox(
       });
       setHasMore(res.data.hasMore);
     }
-  }, [listQuery, filter]);
+  }, [listQuery, filter, scope]);
 
   const markRead = useCallback(async (id: string) => {
     const target = notificationsRef.current.find((n) => n.id === id);

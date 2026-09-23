@@ -155,6 +155,58 @@ describe("useInbox", () => {
     );
   });
 
+  // A consumer that resolves its organization after mount (a client-side
+  // session fetch) renders the hook unscoped first. If that unscoped request
+  // lands after the scoped one, the badge shows every organization's unread.
+  it("ignores responses for a scope it has since left", async () => {
+    const client = makeMockClient();
+    type Count = { data: { count: number }; error: null };
+    type List = {
+      data: { notifications: ReturnType<typeof makeNotification>[]; hasMore: boolean };
+      error: null;
+    };
+    const counts: ((v: Count) => void)[] = [];
+    const lists: ((v: List) => void)[] = [];
+    client.inbox.unreadCount.mockImplementation(
+      () => new Promise<Count>((resolve) => counts.push(resolve)),
+    );
+    client.inbox.list.mockImplementation(
+      () => new Promise<List>((resolve) => lists.push(resolve)),
+    );
+
+    const { result, rerender } = renderHook(
+      ({ organizationId }: { organizationId?: string }) =>
+        useInbox(client, { organizationId, pollInterval: 0 }),
+      { initialProps: {} as { organizationId?: string } },
+    );
+    await waitFor(() => expect(counts).toHaveLength(1));
+
+    rerender({ organizationId: "org1" });
+    await waitFor(() => expect(counts).toHaveLength(2));
+
+    await act(async () => {
+      counts[1]!({ data: { count: 3 }, error: null });
+      lists[1]!({
+        data: { notifications: [makeNotification("scoped")], hasMore: false },
+        error: null,
+      });
+    });
+    await act(async () => {
+      counts[0]!({ data: { count: 39 }, error: null });
+      lists[0]!({
+        data: {
+          notifications: [makeNotification("a"), makeNotification("b")],
+          hasMore: true,
+        },
+        error: null,
+      });
+    });
+
+    expect(result.current.unreadCount).toBe(3);
+    expect(result.current.notifications.map((n) => n.id)).toEqual(["scoped"]);
+    expect(result.current.hasMore).toBe(false);
+  });
+
   // The server's unread set shrinks under us as rows are marked read, so paging
   // by list length would skip exactly as many rows as the user has clicked.
   it("offsets by unread rows held when filtering to unread", async () => {
