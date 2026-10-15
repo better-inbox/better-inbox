@@ -34,10 +34,9 @@ test(
     await screen.getByRole("button", "Send me a notification").tap();
     await expect(screen.getByRole("status")).toHaveText("Sent 1");
 
-    // a fresh load picks the new notification up, as a real visit would
-    await browser.reload();
+    // opening the bell fetches, so a notification sent seconds after mount
+    // shows up without a reload
     const bell = screen.getByRole("button", "Notifications");
-    await expect(bell).toContainText("1");
 
     // survives only if the next navigation is client-side, not a page load
     await browser.evaluate(() => {

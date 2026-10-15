@@ -9,7 +9,7 @@ node scripts/migrate.ts   # creates example.db
 bun run dev               # http://localhost:3000
 ```
 
-Sign up, press **Send me a notification**, reload, and open the bell.
+Sign up, press **Send me a notification**, and open the bell.
 
 ## The parts that are TanStack-specific
 
@@ -42,7 +42,7 @@ bun run test:e2e
 The runner starts the app on a free port against a fresh `e2e.db`. It checks:
 
 - `/settings?tab=billing` renders with its search params
-- sign up → notification created by a server function → badge shows `1`
+- sign up → notification created by a server function → opening the bell shows it, no reload
 - clicking the notification lands on exactly `/settings?tab=billing#card`,
   without a page load (a `window` marker set before the click survives)
 - hopping between routes afterwards makes no new `inbox/list` requests
