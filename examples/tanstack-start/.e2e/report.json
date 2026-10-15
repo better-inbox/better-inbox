@@ -1,0 +1,1207 @@
+{
+  "schemaVersion": "report-1",
+  "run": {
+    "id": "01a13de6-b7dd-70ba-8d9a-193073951f4f",
+    "specVersion": "0.1",
+    "runner": {
+      "name": "e2e",
+      "version": "0.21.0"
+    },
+    "status": "passed",
+    "exitCode": 0,
+    "startedAt": "2026-10-15T04:51:33.312Z",
+    "finishedAt": "2026-10-15T04:51:39.339Z",
+    "project": {
+      "id": "better-inbox-example-tanstack-start",
+      "configDigest": "51583372e9a0068421f6461dec665fcdf2fd783e783e9537a8aa4ff2a066ad64"
+    },
+    "environment": {
+      "ci": false,
+      "trustNoticeShown": false,
+      "os": "linux 7.2.5-3-omarchy",
+      "arch": "x64",
+      "runtime": "node v26.10.0"
+    },
+    "vcs": {
+      "commit": "191e9eb367a8a96646f05e33f73b0874b569106f",
+      "branch": "examples/tanstack-start",
+      "dirty": true
+    },
+    "targets": [
+      {
+        "id": "web",
+        "index": 0,
+        "platform": "web",
+        "baseOrigin": "http://127.0.0.1:46009",
+        "environment": "test",
+        "engine": {
+          "name": "web",
+          "version": "0.15.0",
+          "spiVersion": 1
+        },
+        "capabilities": [
+          "actions",
+          "artifacts",
+          "browser",
+          "keyboard",
+          "location",
+          "observation",
+          "pointer",
+          "state"
+        ],
+        "artifactCapabilities": [
+          "screenshot",
+          "video"
+        ],
+        "stateCapability": true
+      }
+    ],
+    "serialGroups": [],
+    "results": [
+      {
+        "id": "b90294c10571f105eba999ab780d87aacece61bcee97fcb769426e37108a8e98",
+        "testId": "tests/inbox.e2e.ts::settings%20renders%20on%20the%20server%20with%20its%20search%20params",
+        "kind": "test",
+        "declarationIndex": 0,
+        "titlePath": [
+          "settings renders on the server with its search params"
+        ],
+        "file": "tests/inbox.e2e.ts",
+        "source": {
+          "file": "tests/inbox.e2e.ts",
+          "line": 4,
+          "column": 1
+        },
+        "targetId": "web",
+        "platform": "web",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": true,
+        "status": "passed",
+        "attempts": [
+          {
+            "id": "01a13de6-c5d8-7587-b54f-34e31912625a",
+            "index": 0,
+            "status": "passed",
+            "startedAt": "2026-10-15T04:51:36.536Z",
+            "durationMs": 291,
+            "artifacts": [],
+            "secondaryErrors": [],
+            "cleanup": "complete",
+            "environment": {
+              "browser": "chromium 156.0.8078.4",
+              "user agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36"
+            },
+            "steps": [
+              {
+                "id": "01a13de6-c5d8-7587-b54f-34e31912625a:0",
+                "index": 0,
+                "kind": "app",
+                "api": "app.open",
+                "label": "/settings?tab=billing",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:36.642Z",
+                "durationMs": 116,
+                "events": [],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:46009/settings?tab=billing",
+                  "nodes": 12,
+                  "changes": []
+                },
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 14,
+                  "column": 13
+                }
+              },
+              {
+                "id": "01a13de6-c5d8-7587-b54f-34e31912625a:1",
+                "index": 1,
+                "kind": "assertion",
+                "api": "expect.toBeVisible",
+                "label": "getByRole(\"heading\", name: \"Settings\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:36.763Z",
+                "durationMs": 50,
+                "events": [
+                  {
+                    "kind": "poll",
+                    "name": "expect",
+                    "startedAt": "2026-10-15T04:51:36.764Z",
+                    "durationMs": 49,
+                    "status": "passed",
+                    "count": 1
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 15,
+                  "column": 57
+                }
+              },
+              {
+                "id": "01a13de6-c5d8-7587-b54f-34e31912625a:2",
+                "index": 2,
+                "kind": "assertion",
+                "api": "expect.toHaveText",
+                "label": "getByTestId(\"tab\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:36.813Z",
+                "durationMs": 6,
+                "events": [
+                  {
+                    "kind": "poll",
+                    "name": "expect",
+                    "startedAt": "2026-10-15T04:51:36.814Z",
+                    "durationMs": 6,
+                    "status": "passed",
+                    "count": 1
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 16,
+                  "column": 43
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "683df32740dec94a7bae8360809740b4c3b7397fd1be686e9ade2b2645eb716b",
+        "testId": "tests/inbox.e2e.ts::a%20notification%27s%20href%20navigates%20client-side%2C%20query%20and%20hash%20intact",
+        "kind": "test",
+        "declarationIndex": 1,
+        "titlePath": [
+          "a notification's href navigates client-side, query and hash intact"
+        ],
+        "file": "tests/inbox.e2e.ts",
+        "source": {
+          "file": "tests/inbox.e2e.ts",
+          "line": 19,
+          "column": 1
+        },
+        "targetId": "web",
+        "platform": "web",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": true,
+        "status": "passed",
+        "attempts": [
+          {
+            "id": "01a13de6-c6fd-769e-84ea-f32e79347429",
+            "index": 0,
+            "status": "passed",
+            "startedAt": "2026-10-15T04:51:36.829Z",
+            "durationMs": 2443,
+            "artifacts": [],
+            "secondaryErrors": [],
+            "cleanup": "complete",
+            "environment": {
+              "browser": "chromium 156.0.8078.4",
+              "user agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36"
+            },
+            "steps": [
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:0",
+                "index": 0,
+                "kind": "resource",
+                "api": "browser.route",
+                "label": "**/api/auth/inbox/list**",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:36.835Z",
+                "durationMs": 2,
+                "events": [],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 24,
+                  "column": 19
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:1",
+                "index": 1,
+                "kind": "app",
+                "api": "app.open",
+                "label": "/",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:36.837Z",
+                "durationMs": 194,
+                "events": [],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:46009/",
+                  "nodes": 7,
+                  "changes": []
+                },
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 29,
+                  "column": 15
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:2",
+                "index": 2,
+                "kind": "locator",
+                "api": "locator.fill",
+                "label": "getByLabel(\"Email\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:37.032Z",
+                "durationMs": 560,
+                "events": [
+                  {
+                    "kind": "navigation",
+                    "startedAt": "2026-10-15T04:51:37.313Z",
+                    "durationMs": 0,
+                    "status": "passed",
+                    "detail": "navigated to http://127.0.0.1:46009/"
+                  },
+                  {
+                    "kind": "engine",
+                    "name": "fill",
+                    "startedAt": "2026-10-15T04:51:37.032Z",
+                    "durationMs": 560,
+                    "status": "passed",
+                    "detail": "fill textbox \"Email\" (appeared after 492ms)"
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:46009/",
+                  "nodes": 13,
+                  "since": 1,
+                  "changes": [
+                    "added heading \"Sign up\"",
+                    "added text=\"Email\"",
+                    "added textbox \"Email\" value=\"user-1792039897032@example.dev\"",
+                    "added text=\"Password\"",
+                    "added textbox \"Password\" value=<secure> purpose=password [secure]",
+                    "added button \"Create account\""
+                  ]
+                },
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 30,
+                  "column": 38
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:3",
+                "index": 3,
+                "kind": "locator",
+                "api": "locator.fill",
+                "label": "getByLabel(\"Password\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:37.593Z",
+                "durationMs": 28,
+                "events": [
+                  {
+                    "kind": "engine",
+                    "name": "fill",
+                    "startedAt": "2026-10-15T04:51:37.594Z",
+                    "durationMs": 28,
+                    "status": "passed",
+                    "detail": "fill textbox \"Password\""
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:46009/",
+                  "nodes": 13,
+                  "since": 2,
+                  "changes": []
+                },
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 31,
+                  "column": 41
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:4",
+                "index": 4,
+                "kind": "locator",
+                "api": "locator.tap",
+                "label": "getByRole(\"button\", name: \"Create account\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:37.623Z",
+                "durationMs": 93,
+                "events": [
+                  {
+                    "kind": "engine",
+                    "name": "tap",
+                    "startedAt": "2026-10-15T04:51:37.623Z",
+                    "durationMs": 93,
+                    "status": "passed",
+                    "detail": "tap button \"Create account\""
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:46009/",
+                  "nodes": 13,
+                  "since": 3,
+                  "changes": []
+                },
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 32,
+                  "column": 56
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:5",
+                "index": 5,
+                "kind": "locator",
+                "api": "locator.tap",
+                "label": "getByRole(\"button\", name: \"Send me a notification\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:37.717Z",
+                "durationMs": 300,
+                "events": [
+                  {
+                    "kind": "engine",
+                    "name": "tap",
+                    "startedAt": "2026-10-15T04:51:37.717Z",
+                    "durationMs": 300,
+                    "status": "passed",
+                    "detail": "tap button \"Send me a notification\" (appeared after 218ms)"
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:46009/",
+                  "nodes": 12,
+                  "since": 4,
+                  "changes": [
+                    "added text=\"user-1792039897032@example.dev\"",
+                    "added button \"Notifications\"",
+                    "added heading \"Home\"",
+                    "added button \"Send me a notification\"",
+                    "added button \"Sign out\"",
+                    "removed heading \"Sign up\"",
+                    "removed text=\"Email\"",
+                    "removed textbox \"Email\" value=\"user-1792039897032@example.dev\"",
+                    "removed text=\"Password\"",
+                    "removed textbox \"Password\" value=<secure> purpose=password [secure]",
+                    "removed button \"Create account\""
+                  ]
+                },
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 34,
+                  "column": 64
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:6",
+                "index": 6,
+                "kind": "assertion",
+                "api": "expect.toHaveText",
+                "label": "getByRole(\"status\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:38.017Z",
+                "durationMs": 113,
+                "events": [
+                  {
+                    "kind": "poll",
+                    "name": "expect",
+                    "startedAt": "2026-10-15T04:51:38.018Z",
+                    "durationMs": 113,
+                    "status": "passed",
+                    "count": 2,
+                    "detail": "no node (0 matches) -> at 113ms text \"Sent 1\" (1 match)"
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 35,
+                  "column": 46
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:7",
+                "index": 7,
+                "kind": "resource",
+                "api": "browser.reload",
+                "label": "",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:38.131Z",
+                "durationMs": 49,
+                "events": [],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 38,
+                  "column": 19
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:8",
+                "index": 8,
+                "kind": "assertion",
+                "api": "expect.toContainText",
+                "label": "getByRole(\"button\", name: \"Notifications\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:38.182Z",
+                "durationMs": 383,
+                "events": [
+                  {
+                    "kind": "poll",
+                    "name": "expect",
+                    "startedAt": "2026-10-15T04:51:38.182Z",
+                    "durationMs": 383,
+                    "status": "passed",
+                    "count": 4,
+                    "detail": "no node (0 matches) x3 -> at 383ms text \"1\" (1 match)"
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 40,
+                  "column": 24
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:9",
+                "index": 9,
+                "kind": "resource",
+                "api": "browser.evaluate",
+                "label": "",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:38.565Z",
+                "durationMs": 3,
+                "events": [],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 43,
+                  "column": 19
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:10",
+                "index": 10,
+                "kind": "locator",
+                "api": "locator.tap",
+                "label": "getByRole(\"button\", name: \"Notifications\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:38.568Z",
+                "durationMs": 97,
+                "events": [
+                  {
+                    "kind": "engine",
+                    "name": "tap",
+                    "startedAt": "2026-10-15T04:51:38.568Z",
+                    "durationMs": 97,
+                    "status": "passed",
+                    "detail": "tap button \"Notifications\""
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:46009/",
+                  "nodes": 22,
+                  "since": 5,
+                  "changes": [
+                    "added button \"Notifications\" [expanded]",
+                    "added text=\"1\"",
+                    "added tablist",
+                    "added tab \"unread\" [selected]",
+                    "added tab \"all\"",
+                    "added button \"Mark all read\"",
+                    "added list",
+                    "added listitem \"Payment failed — update your cardjust now\"",
+                    "added button \"Payment failed — update your cardjust now\"",
+                    "added text=\"Payment failed — update your card\"",
+                    "added text=\"just now\"",
+                    "removed button \"Notifications\""
+                  ]
+                },
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 48,
+                  "column": 16
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:11",
+                "index": 11,
+                "kind": "locator",
+                "api": "locator.tap",
+                "label": "getByText(\"Payment failed — update your card\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:38.666Z",
+                "durationMs": 79,
+                "events": [
+                  {
+                    "kind": "navigation",
+                    "startedAt": "2026-10-15T04:51:38.718Z",
+                    "durationMs": 0,
+                    "status": "passed",
+                    "detail": "navigated to http://127.0.0.1:46009/settings?tab=billing#card"
+                  },
+                  {
+                    "kind": "engine",
+                    "name": "tap",
+                    "startedAt": "2026-10-15T04:51:38.666Z",
+                    "durationMs": 79,
+                    "status": "passed",
+                    "detail": "tap node \"Payment failed — update your card\""
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:46009/settings?tab=billing#card",
+                  "nodes": 21,
+                  "since": 10,
+                  "changes": [
+                    "removed text=\"1\""
+                  ]
+                },
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 49,
+                  "column": 65
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:12",
+                "index": 12,
+                "kind": "assertion",
+                "api": "expect.toHaveURL",
+                "label": "/settings?tab=billing#card",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:38.746Z",
+                "durationMs": 1,
+                "events": [],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 51,
+                  "column": 27
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:13",
+                "index": 13,
+                "kind": "assertion",
+                "api": "expect.toHaveText",
+                "label": "getByTestId(\"tab\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:38.747Z",
+                "durationMs": 110,
+                "events": [
+                  {
+                    "kind": "poll",
+                    "name": "expect",
+                    "startedAt": "2026-10-15T04:51:38.747Z",
+                    "durationMs": 110,
+                    "status": "passed",
+                    "count": 2,
+                    "detail": "no node (0 matches) -> at 110ms text \"billing\" (1 match)"
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 52,
+                  "column": 45
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:14",
+                "index": 14,
+                "kind": "assertion",
+                "api": "expect.toHaveText",
+                "label": "getByTestId(\"section\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:38.857Z",
+                "durationMs": 4,
+                "events": [
+                  {
+                    "kind": "poll",
+                    "name": "expect",
+                    "startedAt": "2026-10-15T04:51:38.857Z",
+                    "durationMs": 4,
+                    "status": "passed",
+                    "count": 1
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 53,
+                  "column": 49
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:15",
+                "index": 15,
+                "kind": "resource",
+                "api": "browser.evaluate",
+                "label": "",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:38.861Z",
+                "durationMs": 2,
+                "events": [],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 55,
+                  "column": 21
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:16",
+                "index": 16,
+                "kind": "locator",
+                "api": "locator.press",
+                "label": "getByRole(\"button\", name: \"Notifications\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:38.863Z",
+                "durationMs": 39,
+                "events": [
+                  {
+                    "kind": "engine",
+                    "name": "press",
+                    "startedAt": "2026-10-15T04:51:38.864Z",
+                    "durationMs": 38,
+                    "status": "passed",
+                    "detail": "press button \"Notifications\""
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:46009/settings?tab=billing#card",
+                  "nodes": 14,
+                  "since": 11,
+                  "changes": [
+                    "changed button \"Notifications\" (was: button \"Notifications\" [expanded])",
+                    "added heading \"Settings\"",
+                    "added text=\"Tab: billing\"",
+                    "added text=\"billing\" testid=\"tab\"",
+                    "added text=\"Section: #card\"",
+                    "added text=\"#card\" testid=\"section\"",
+                    "removed tablist",
+                    "removed tab \"unread\" [selected]",
+                    "removed tab \"all\"",
+                    "removed button \"Mark all read\"",
+                    "removed list",
+                    "removed listitem \"Payment failed — update your cardjust now\""
+                  ],
+                  "more": 6
+                },
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 62,
+                  "column": 16
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:17",
+                "index": 17,
+                "kind": "locator",
+                "api": "locator.tap",
+                "label": "getByRole(\"link\", name: \"Home\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:38.903Z",
+                "durationMs": 55,
+                "events": [
+                  {
+                    "kind": "navigation",
+                    "startedAt": "2026-10-15T04:51:38.927Z",
+                    "durationMs": 0,
+                    "status": "passed",
+                    "detail": "navigated to http://127.0.0.1:46009/"
+                  },
+                  {
+                    "kind": "engine",
+                    "name": "tap",
+                    "startedAt": "2026-10-15T04:51:38.903Z",
+                    "durationMs": 55,
+                    "status": "passed",
+                    "detail": "tap link \"Home\""
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:46009/",
+                  "nodes": 12,
+                  "since": 16,
+                  "changes": [
+                    "added heading \"Home\"",
+                    "added button \"Send me a notification\"",
+                    "added button \"Sign out\"",
+                    "removed heading \"Settings\"",
+                    "removed text=\"Tab: billing\"",
+                    "removed text=\"billing\" testid=\"tab\"",
+                    "removed text=\"Section: #card\"",
+                    "removed text=\"#card\" testid=\"section\""
+                  ]
+                },
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 66,
+                  "column": 46
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:18",
+                "index": 18,
+                "kind": "assertion",
+                "api": "expect.toBeVisible",
+                "label": "getByRole(\"heading\", name: \"Home\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:38.958Z",
+                "durationMs": 8,
+                "events": [
+                  {
+                    "kind": "poll",
+                    "name": "expect",
+                    "startedAt": "2026-10-15T04:51:38.958Z",
+                    "durationMs": 7,
+                    "status": "passed",
+                    "count": 1
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 67,
+                  "column": 57
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:19",
+                "index": 19,
+                "kind": "locator",
+                "api": "locator.tap",
+                "label": "getByRole(\"link\", name: \"Settings\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:38.966Z",
+                "durationMs": 76,
+                "events": [
+                  {
+                    "kind": "navigation",
+                    "startedAt": "2026-10-15T04:51:39.014Z",
+                    "durationMs": 0,
+                    "status": "passed",
+                    "detail": "navigated to http://127.0.0.1:46009/settings"
+                  },
+                  {
+                    "kind": "engine",
+                    "name": "tap",
+                    "startedAt": "2026-10-15T04:51:38.966Z",
+                    "durationMs": 76,
+                    "status": "passed",
+                    "detail": "tap link \"Settings\""
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:46009/settings",
+                  "nodes": 14,
+                  "since": 17,
+                  "changes": [
+                    "added heading \"Settings\"",
+                    "added text=\"Tab: general\"",
+                    "added text=\"general\" testid=\"tab\"",
+                    "added text=\"Section: none\"",
+                    "added text=\"none\" testid=\"section\"",
+                    "removed heading \"Home\"",
+                    "removed button \"Send me a notification\"",
+                    "removed button \"Sign out\""
+                  ]
+                },
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 68,
+                  "column": 50
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:20",
+                "index": 20,
+                "kind": "assertion",
+                "api": "expect.toBeVisible",
+                "label": "getByRole(\"heading\", name: \"Settings\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:39.043Z",
+                "durationMs": 8,
+                "events": [
+                  {
+                    "kind": "poll",
+                    "name": "expect",
+                    "startedAt": "2026-10-15T04:51:39.043Z",
+                    "durationMs": 7,
+                    "status": "passed",
+                    "count": 1
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 69,
+                  "column": 61
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:21",
+                "index": 21,
+                "kind": "locator",
+                "api": "locator.tap",
+                "label": "getByRole(\"link\", name: \"Home\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:39.051Z",
+                "durationMs": 70,
+                "events": [
+                  {
+                    "kind": "navigation",
+                    "startedAt": "2026-10-15T04:51:39.094Z",
+                    "durationMs": 0,
+                    "status": "passed",
+                    "detail": "navigated to http://127.0.0.1:46009/"
+                  },
+                  {
+                    "kind": "engine",
+                    "name": "tap",
+                    "startedAt": "2026-10-15T04:51:39.051Z",
+                    "durationMs": 70,
+                    "status": "passed",
+                    "detail": "tap link \"Home\""
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:46009/",
+                  "nodes": 12,
+                  "since": 19,
+                  "changes": [
+                    "added heading \"Home\"",
+                    "added button \"Send me a notification\"",
+                    "added button \"Sign out\"",
+                    "removed heading \"Settings\"",
+                    "removed text=\"Tab: general\"",
+                    "removed text=\"general\" testid=\"tab\"",
+                    "removed text=\"Section: none\"",
+                    "removed text=\"none\" testid=\"section\""
+                  ]
+                },
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 66,
+                  "column": 46
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:22",
+                "index": 22,
+                "kind": "assertion",
+                "api": "expect.toBeVisible",
+                "label": "getByRole(\"heading\", name: \"Home\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:39.121Z",
+                "durationMs": 6,
+                "events": [
+                  {
+                    "kind": "poll",
+                    "name": "expect",
+                    "startedAt": "2026-10-15T04:51:39.121Z",
+                    "durationMs": 6,
+                    "status": "passed",
+                    "count": 1
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 67,
+                  "column": 57
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:23",
+                "index": 23,
+                "kind": "locator",
+                "api": "locator.tap",
+                "label": "getByRole(\"link\", name: \"Settings\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:39.127Z",
+                "durationMs": 42,
+                "events": [
+                  {
+                    "kind": "navigation",
+                    "startedAt": "2026-10-15T04:51:39.146Z",
+                    "durationMs": 0,
+                    "status": "passed",
+                    "detail": "navigated to http://127.0.0.1:46009/settings"
+                  },
+                  {
+                    "kind": "engine",
+                    "name": "tap",
+                    "startedAt": "2026-10-15T04:51:39.128Z",
+                    "durationMs": 42,
+                    "status": "passed",
+                    "detail": "tap link \"Settings\""
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:46009/settings",
+                  "nodes": 14,
+                  "since": 21,
+                  "changes": [
+                    "added heading \"Settings\"",
+                    "added text=\"Tab: general\"",
+                    "added text=\"general\" testid=\"tab\"",
+                    "added text=\"Section: none\"",
+                    "added text=\"none\" testid=\"section\"",
+                    "removed heading \"Home\"",
+                    "removed button \"Send me a notification\"",
+                    "removed button \"Sign out\""
+                  ]
+                },
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 68,
+                  "column": 50
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:24",
+                "index": 24,
+                "kind": "assertion",
+                "api": "expect.toBeVisible",
+                "label": "getByRole(\"heading\", name: \"Settings\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:39.170Z",
+                "durationMs": 7,
+                "events": [
+                  {
+                    "kind": "poll",
+                    "name": "expect",
+                    "startedAt": "2026-10-15T04:51:39.170Z",
+                    "durationMs": 7,
+                    "status": "passed",
+                    "count": 1
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 69,
+                  "column": 61
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:25",
+                "index": 25,
+                "kind": "locator",
+                "api": "locator.tap",
+                "label": "getByRole(\"link\", name: \"Home\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:39.177Z",
+                "durationMs": 38,
+                "events": [
+                  {
+                    "kind": "navigation",
+                    "startedAt": "2026-10-15T04:51:39.194Z",
+                    "durationMs": 0,
+                    "status": "passed",
+                    "detail": "navigated to http://127.0.0.1:46009/"
+                  },
+                  {
+                    "kind": "engine",
+                    "name": "tap",
+                    "startedAt": "2026-10-15T04:51:39.177Z",
+                    "durationMs": 38,
+                    "status": "passed",
+                    "detail": "tap link \"Home\""
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:46009/",
+                  "nodes": 12,
+                  "since": 23,
+                  "changes": [
+                    "added heading \"Home\"",
+                    "added button \"Send me a notification\"",
+                    "added button \"Sign out\"",
+                    "removed heading \"Settings\"",
+                    "removed text=\"Tab: general\"",
+                    "removed text=\"general\" testid=\"tab\"",
+                    "removed text=\"Section: none\"",
+                    "removed text=\"none\" testid=\"section\""
+                  ]
+                },
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 66,
+                  "column": 46
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:26",
+                "index": 26,
+                "kind": "assertion",
+                "api": "expect.toBeVisible",
+                "label": "getByRole(\"heading\", name: \"Home\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:39.215Z",
+                "durationMs": 4,
+                "events": [
+                  {
+                    "kind": "poll",
+                    "name": "expect",
+                    "startedAt": "2026-10-15T04:51:39.216Z",
+                    "durationMs": 4,
+                    "status": "passed",
+                    "count": 1
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 67,
+                  "column": 57
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:27",
+                "index": 27,
+                "kind": "locator",
+                "api": "locator.tap",
+                "label": "getByRole(\"link\", name: \"Settings\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:39.220Z",
+                "durationMs": 40,
+                "events": [
+                  {
+                    "kind": "navigation",
+                    "startedAt": "2026-10-15T04:51:39.244Z",
+                    "durationMs": 0,
+                    "status": "passed",
+                    "detail": "navigated to http://127.0.0.1:46009/settings"
+                  },
+                  {
+                    "kind": "engine",
+                    "name": "tap",
+                    "startedAt": "2026-10-15T04:51:39.221Z",
+                    "durationMs": 40,
+                    "status": "passed",
+                    "detail": "tap link \"Settings\""
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:46009/settings",
+                  "nodes": 14,
+                  "since": 25,
+                  "changes": [
+                    "added heading \"Settings\"",
+                    "added text=\"Tab: general\"",
+                    "added text=\"general\" testid=\"tab\"",
+                    "added text=\"Section: none\"",
+                    "added text=\"none\" testid=\"section\"",
+                    "removed heading \"Home\"",
+                    "removed button \"Send me a notification\"",
+                    "removed button \"Sign out\""
+                  ]
+                },
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 68,
+                  "column": 50
+                }
+              },
+              {
+                "id": "01a13de6-c6fd-769e-84ea-f32e79347429:28",
+                "index": 28,
+                "kind": "assertion",
+                "api": "expect.toBeVisible",
+                "label": "getByRole(\"heading\", name: \"Settings\")",
+                "status": "passed",
+                "startedAt": "2026-10-15T04:51:39.262Z",
+                "durationMs": 4,
+                "events": [
+                  {
+                    "kind": "poll",
+                    "name": "expect",
+                    "startedAt": "2026-10-15T04:51:39.262Z",
+                    "durationMs": 4,
+                    "status": "passed",
+                    "count": 1
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/inbox.e2e.ts",
+                  "line": 69,
+                  "column": 61
+                }
+              }
+            ],
+            "appLog": [
+              {
+                "source": "console",
+                "level": "info",
+                "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold (at http://127.0.0.1:46009/node_modules/.vite/deps/react-dom_client.js?v=4ef9ad58:15805)",
+                "at": "2026-10-15T04:51:37.301Z",
+                "step": 2
+              },
+              {
+                "source": "console",
+                "level": "info",
+                "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold (at http://127.0.0.1:46009/node_modules/.vite/deps/react-dom_client.js?v=4ef9ad58:15805)",
+                "at": "2026-10-15T04:51:38.426Z",
+                "step": 8
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "errors": [],
+    "summary": {
+      "discovered": 2,
+      "selected": 2,
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "interrupted": 0,
+      "flaky": 0,
+      "skipped": 0
+    },
+    "limits": {
+      "maxAgentContextBytes": 16384,
+      "maxLedgerBytes": 8192,
+      "maxObservationBytes": 262144,
+      "maxEventsPerStep": 1000,
+      "maxModelTokensPerCall": 64000
+    },
+    "usage": {
+      "discoveredResults": 2,
+      "maxAgentContextBytes": 0,
+      "maxLedgerBytes": 0,
+      "maxObservationBytes": 0,
+      "artifactBytes": 0,
+      "downloads": 0,
+      "events": 33,
+      "modelTokens": 0,
+      "maxModelCallsInStep": 0,
+      "maxActionStepsInStep": 0
+    }
+  }
+}
