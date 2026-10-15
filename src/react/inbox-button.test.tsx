@@ -185,4 +185,26 @@ describe("InboxButton", () => {
 
     expect(screen.getByText("Second notification")).toBeTruthy();
   });
+
+  it("buttonClassName replaces the trigger's default look but keeps it relative", () => {
+    const client = makeMockClient();
+    render(
+      <InboxButton
+        client={client}
+        className="wrapper-class"
+        buttonClassName="size-8 rounded-full"
+      />,
+    );
+
+    const trigger = screen.getByRole("button", { name: /notifications/i });
+    expect(trigger.className).toBe("relative size-8 rounded-full");
+    expect(trigger.parentElement?.className).toContain("wrapper-class");
+  });
+
+  it("keeps the default trigger look without buttonClassName", () => {
+    render(<InboxButton client={makeMockClient()} />);
+
+    const trigger = screen.getByRole("button", { name: /notifications/i });
+    expect(trigger.className).toContain("size-9");
+  });
 });

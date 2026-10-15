@@ -73,6 +73,21 @@ const router = useRouter();
 <InboxButton client={authClient} onNavigate={(href) => router.navigate({ href })} />
 ```
 
+Tailwind v4 skips `node_modules` when it scans for classes, so point it at the package from your CSS or some of the button's and panel's classes won't be generated:
+
+```css
+@import "tailwindcss";
+@source "../node_modules/better-inbox/dist"; /* path relative to this CSS file */
+```
+
+`InboxButton` renders its own `<button>`, so don't wrap it in another one. To match your design system's trigger, pass `buttonClassName`; it replaces the default look. With shadcn:
+
+```tsx
+import { buttonVariants } from "@/components/ui/button";
+
+<InboxButton client={authClient} buttonClassName={buttonVariants({ variant: "ghost", size: "icon" })} />
+```
+
 **5. Send notifications** from any server code — a server action, a webhook handler, a cron job:
 
 ```ts
@@ -123,7 +138,7 @@ Every session endpoint is scoped to the caller — users can only ever see and m
 
 ### React (`better-inbox/react`)
 
-- `<InboxButton client={authClient} />` — bell + badge + panel. Props: `onNavigate`, `renderItem`, `pollInterval` (default 30s; unread count only, paused while the tab is hidden), `refreshOnFocus` (default `true`; full refresh when the tab becomes visible), `filter`, `organizationId`, `className`. The visibility refresh is skipped when the data is under 5s old; opening the panel always refreshes. Opens on an **Unread** tab (fetched server-side with `filter: "unread"`) with **All** second; passing `filter` locks the list and hides the tabs.
+- `<InboxButton client={authClient} />` — bell + badge + panel. Props: `onNavigate`, `renderItem`, `pollInterval` (default 30s; unread count only, paused while the tab is hidden), `refreshOnFocus` (default `true`; full refresh when the tab becomes visible), `filter`, `organizationId`, `className` (the wrapper), `buttonClassName` (replaces the trigger's default classes). The visibility refresh is skipped when the data is under 5s old; opening the panel always refreshes. Opens on an **Unread** tab (fetched server-side with `filter: "unread"`) with **All** second; passing `filter` locks the list and hides the tabs.
 - `useInbox(client, options)` — build your own UI: `{ notifications, unreadCount, isLoading, hasMore, loadMore, markRead, markAllRead, refresh, refreshIfStale }`. Options: `pollInterval`, `pageSize`, `filter`, `organizationId`, `refreshOnFocus`. `refresh()` always fetches (concurrent calls share one request); `refreshIfStale()` skips if the data is under 5s old.
 - `filter: "unread"` fetches only unread rows, so a page is a full page — `useInbox(authClient, { filter: "unread", pageSize: 5 })` yields five unread notifications instead of five rows you then filter down to however many are unread. Rows you mark read stay in the list until the next `refresh()`, and `loadMore()` accounts for them when paging.
 - `<InboxPanel inbox={useInbox(...)} />` — the panel without the bell. Pass `view` + `onViewChange` to control its tabs; uncontrolled it defaults to Unread.

@@ -12,8 +12,18 @@ export type InboxButtonProps = {
   refreshOnFocus?: boolean;
   filter?: "unread" | "all";
   organizationId?: string;
+  /** classes for the wrapper around the trigger and panel */
   className?: string;
+  /**
+   * replaces the trigger's default look (size, shape, colors), e.g. shadcn's
+   * `buttonVariants({ variant: "ghost", size: "icon" })`. The trigger keeps
+   * `relative` so the unread badge stays anchored.
+   */
+  buttonClassName?: string;
 };
+
+const DEFAULT_BUTTON_CLASS =
+  "inline-flex size-9 items-center justify-center rounded-md text-foreground hover:bg-accent";
 
 export function InboxButton({
   client,
@@ -24,6 +34,7 @@ export function InboxButton({
   filter,
   organizationId,
   className,
+  buttonClassName,
 }: InboxButtonProps) {
   const [view, setView] = useState<"unread" | "all">("unread");
   // a filter prop locks the panel to that list; without one, the tabs choose
@@ -71,7 +82,7 @@ export function InboxButton({
         aria-label="Notifications"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="relative inline-flex size-9 items-center justify-center rounded-md text-foreground hover:bg-accent"
+        className={`relative ${buttonClassName ?? DEFAULT_BUTTON_CLASS}`}
       >
         <svg
           aria-hidden
