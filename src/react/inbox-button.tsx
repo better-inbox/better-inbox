@@ -9,6 +9,7 @@ export type InboxButtonProps = {
   onNavigate?: (href: string) => void;
   renderItem?: (notification: InboxNotification) => ReactNode;
   pollInterval?: number;
+  refreshOnFocus?: boolean;
   filter?: "unread" | "all";
   organizationId?: string;
   className?: string;
@@ -19,6 +20,7 @@ export function InboxButton({
   onNavigate,
   renderItem,
   pollInterval,
+  refreshOnFocus,
   filter,
   organizationId,
   className,
@@ -30,6 +32,7 @@ export function InboxButton({
   const effectiveFilter = locked ? filter : view;
   const inbox = useInbox(client, {
     ...(pollInterval !== undefined ? { pollInterval } : {}),
+    ...(refreshOnFocus !== undefined ? { refreshOnFocus } : {}),
     filter: effectiveFilter,
     ...(organizationId !== undefined ? { organizationId } : {}),
   });
@@ -55,7 +58,8 @@ export function InboxButton({
   }, [open]);
 
   useEffect(() => {
-    if (open) void inbox.refresh();
+    // skipped when the list is only seconds old, e.g. opened right after mount
+    if (open) void inbox.refreshIfStale();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh only when opening
   }, [open]);
 

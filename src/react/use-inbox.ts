@@ -48,7 +48,17 @@ export type UseInboxOptions = {
   filter?: "unread" | "all";
   /** Scope everything to one organization. */
   organizationId?: string;
+  /** Refresh when the tab becomes visible again (skipped if the data is under 5s old). @default true */
+  refreshOnFocus?: boolean;
 };
+
+// Automatic refreshes (tab visible, panel open) within this window of the last
+// successful one are skipped (refreshIfStale). Explicit refresh() calls ignore
+// it, though they still join a request already in flight for the same scope.
+const STALE_MS = 5_000;
+
+const isHidden = () =>
+  typeof document !== "undefined" && document.visibilityState === "hidden";
 
 export function useInbox(
   client: InboxFetchClient,
@@ -59,6 +69,7 @@ export function useInbox(
     pageSize = 20,
     filter = "all",
     organizationId,
+    refreshOnFocus = true,
   } = options;
 
   const [notifications, setNotifications] = useState<InboxNotification[]>([]);
@@ -95,26 +106,59 @@ export function useInbox(
     if (res.data && scopeRef.current === scope) setUnreadCount(res.data.count);
   }, [organizationId, scope]);
 
-  const refresh = useCallback(async () => {
-    try {
-      const [list] = await Promise.all([
-        clientRef.current.inbox.list({ query: listQuery(0) }),
-        refreshUnreadCount(),
-      ]);
-      if (scopeRef.current !== scope) return;
-      if (list.error) {
-        setError(list.error);
-      } else if (list.data) {
-        setError(null);
-        setNotifications(list.data.notifications);
-        setHasMore(list.data.hasMore);
+  // Mount, tab focus and panel open can all fire within a few ms of each other.
+  // Calls for the same scope share one in-flight request, and automatic
+  // triggers skip a refresh when this scope's data is still fresh. Both are
+  // keyed by scope so a scope change always fetches.
+  const inFlightRef = useRef<{ scope: string; promise: Promise<void> } | null>(
+    null,
+  );
+  const lastRefreshRef = useRef<{ scope: string; at: number } | null>(null);
+
+  const runRefresh = useCallback(
+    (ifStale: boolean) => {
+      const inFlight = inFlightRef.current;
+      if (inFlight?.scope === scope) return inFlight.promise;
+      const last = lastRefreshRef.current;
+      if (
+        ifStale &&
+        last?.scope === scope &&
+        Date.now() - last.at < STALE_MS
+      ) {
+        return Promise.resolve();
       }
-    } finally {
-      // a transport failure still ends the initial load, otherwise a client
-      // that mounts while offline renders a spinner forever
-      if (scopeRef.current === scope) setIsLoading(false);
-    }
-  }, [listQuery, refreshUnreadCount, scope]);
+
+      const promise = (async () => {
+        try {
+          const [list] = await Promise.all([
+            clientRef.current.inbox.list({ query: listQuery(0) }),
+            refreshUnreadCount(),
+          ]);
+          if (scopeRef.current !== scope) return;
+          if (list.error) {
+            setError(list.error);
+          } else if (list.data) {
+            setError(null);
+            setNotifications(list.data.notifications);
+            setHasMore(list.data.hasMore);
+            lastRefreshRef.current = { scope, at: Date.now() };
+          }
+        } finally {
+          // a transport failure still ends the initial load, otherwise a client
+          // that mounts while offline renders a spinner forever
+          if (scopeRef.current === scope) setIsLoading(false);
+        }
+      })().finally(() => {
+        if (inFlightRef.current?.promise === promise) inFlightRef.current = null;
+      });
+      inFlightRef.current = { scope, promise };
+      return promise;
+    },
+    [listQuery, refreshUnreadCount, scope],
+  );
+  // no parameters, so `onClick={inbox.refresh}` keeps type-checking
+  const refresh = useCallback(() => runRefresh(false), [runRefresh]);
+  const refreshIfStale = useCallback(() => runRefresh(true), [runRefresh]);
 
   const notificationsRef = useRef(notifications);
   notificationsRef.current = notifications;
@@ -161,8 +205,8 @@ export function useInbox(
 
   // These three triggers fire on their own, so nothing is awaiting them. The
   // transport rejects (rather than resolving to { error }) when the request
-  // never reaches the server — an offline or backgrounded tab — and without a
-  // catch that surfaces as an unhandled rejection in the consumer's app.
+  // never reaches the server — an offline tab — and without a catch that
+  // surfaces as an unhandled rejection in the consumer's app.
   const captureBackgroundError = useCallback((reason: unknown) => {
     setError(() => reason);
   }, []);
@@ -174,18 +218,27 @@ export function useInbox(
   useEffect(() => {
     if (pollInterval <= 0) return;
     const interval = setInterval(() => {
+      // nobody sees the badge of a hidden tab; the visibility refresh (or the
+      // next tick, with refreshOnFocus off) catches it up
+      if (isHidden()) return;
       refreshUnreadCount().catch(captureBackgroundError);
     }, pollInterval);
     return () => clearInterval(interval);
   }, [pollInterval, refreshUnreadCount, captureBackgroundError]);
 
+  // visibilitychange rather than window focus: focus fires on every return
+  // from devtools, an iframe or another window, visibility only when the tab
+  // was actually backgrounded
   useEffect(() => {
-    const onFocus = () => {
-      refresh().catch(captureBackgroundError);
+    if (!refreshOnFocus) return;
+    const onVisibilityChange = () => {
+      if (isHidden()) return;
+      refreshIfStale().catch(captureBackgroundError);
     };
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [refresh, captureBackgroundError]);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [refreshOnFocus, refreshIfStale, captureBackgroundError]);
 
   return {
     notifications,
@@ -195,6 +248,7 @@ export function useInbox(
     error,
     filter,
     refresh,
+    refreshIfStale,
     loadMore,
     markRead,
     markAllRead,
