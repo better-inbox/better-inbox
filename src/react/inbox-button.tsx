@@ -58,8 +58,9 @@ export function InboxButton({
   }, [open]);
 
   useEffect(() => {
-    // skipped when the list is only seconds old, e.g. opened right after mount
-    if (open) void inbox.refreshIfStale();
+    // always fetch: opening the bell is a deliberate look, so it must show what
+    // arrived since mount. A refresh already in flight is shared, not doubled.
+    if (open) void inbox.refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh only when opening
   }, [open]);
 
