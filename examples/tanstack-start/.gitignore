@@ -1,0 +1,6 @@
+node_modules
+.output
+.tanstack
+.e2e
+*.db
+dist

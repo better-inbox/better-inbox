@@ -1,0 +1,34 @@
+{
+  "name": "better-inbox-example-tanstack-start",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "migrate": "node scripts/migrate.ts",
+    "test:e2e": "e2e run",
+    "e2e:serve": "rm -f e2e.db && node scripts/migrate.ts && vite dev --strictPort",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/react-router": "^1.170.44",
+    "@tanstack/react-start": "^1.169.2",
+    "better-auth": "^1.7.9",
+    "better-inbox": "^0.4.0",
+    "better-sqlite3": "^12.0.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@e2e-dev/web": "^0.15.0",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "e2e": "^0.21.0",
+    "typescript": "^5.9.0",
+    "vite": "^8.3.4"
+  }
+}
