@@ -8,7 +8,7 @@
         "@tanstack/react-router": "^1.170.44",
         "@tanstack/react-start": "^1.169.2",
         "better-auth": "^1.7.9",
-        "better-inbox": "^0.4.0",
+        "better-inbox": "^0.4.1",
         "better-sqlite3": "^12.0.0",
         "react": "^19.1.0",
         "react-dom": "^19.1.0",
@@ -301,7 +301,7 @@
 
     "better-call": ["better-call@1.4.2", "", { "dependencies": { "@better-auth/utils": "^0.5.0", "@better-fetch/fetch": "^1.3.1", "rou3": "^0.9.1", "set-cookie-parser": "^3.1.2" }, "peerDependencies": { "zod": "^4.0.0" }, "optionalPeers": ["zod"] }, "sha512-lOmFCTG1KcE60YWxoff2Wx0Fv7v7drP/fQTDYnhJUCdkA7V6QWXdLPUiMpOQCq7Fd0Ts3AkrRwD23xoiootlGA=="],
 
-    "better-inbox": ["better-inbox@0.4.0", "", { "dependencies": { "zod": "^4.4.3" }, "peerDependencies": { "better-auth": "^1.6.23", "react": ">=18" }, "optionalPeers": ["react"] }, "sha512-ETEqPYe0/Pf7zEQh4YJUkbxac7CRJH3Jz21TzfXHHoB6mD968QmA0dewtwq4X+5nwsZlimeOuZ6wg2KWde8ohA=="],
+    "better-inbox": ["better-inbox@0.4.1", "", { "dependencies": { "zod": "^4.4.3" }, "peerDependencies": { "better-auth": "^1.6.23", "react": ">=18" }, "optionalPeers": ["react"] }, "sha512-Csb7/RcLDozdVveKtzsW3uIZmhp2wsCOIPG1UL++jpI0hbDrSEee4kPoCndndgw08PMZSRDc5iUeivWg7VSAgA=="],
 
     "better-sqlite3": ["better-sqlite3@12.11.1", "", { "dependencies": { "bindings": "^1.5.0", "prebuild-install": "^7.1.1" } }, "sha512-dq9AtApgg5PGFtBzPFSBl3HZQjHok5gaQCM6zh2Yk0aSmDCs1CbnVI8/HgASQkNKsWFpseIO9beg5xxpYhbIfA=="],
 
