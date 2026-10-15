@@ -68,6 +68,24 @@ describe("InboxButton", () => {
     await waitFor(() => expect(screen.queryByText("2")).toBeNull());
   });
 
+  // A parent re-rendering — a new inline onNavigate, a client object rebuilt
+  // each render — must not refetch; only a scope change should (#5).
+  it("does not refetch when the parent re-renders", async () => {
+    const client = makeMockClient();
+    const { rerender } = render(
+      <InboxButton client={{ ...client }} onNavigate={() => {}} />,
+    );
+    await waitFor(() => expect(screen.getByText("2")).toBeTruthy());
+
+    for (let i = 0; i < 10; i++) {
+      rerender(<InboxButton client={{ ...client }} onNavigate={() => {}} />);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(client.inbox.list).toHaveBeenCalledTimes(1);
+    expect(client.inbox.unreadCount).toHaveBeenCalledTimes(1);
+  });
+
   it("fetches only unread rows and drops the tabs when filtered", async () => {
     const client = makeMockClient();
     render(<InboxButton client={client} filter="unread" />);

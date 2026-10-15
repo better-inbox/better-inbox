@@ -35,6 +35,14 @@ function makeMockClient(
   return client;
 }
 
+function setVisibility(state: DocumentVisibilityState) {
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => state,
+  });
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
 describe("useInbox", () => {
   it("loads notifications and unread count on mount", async () => {
     const client = makeMockClient();
@@ -51,7 +59,7 @@ describe("useInbox", () => {
     });
   });
 
-  it("polls the unread count on the interval and refreshes on window focus", async () => {
+  it("polls the unread count on the interval and refreshes when the tab becomes visible", async () => {
     vi.useFakeTimers();
     try {
       const client = makeMockClient();
@@ -65,15 +73,104 @@ describe("useInbox", () => {
       expect(client.inbox.unreadCount).toHaveBeenCalledTimes(2);
       expect(client.inbox.list).toHaveBeenCalledTimes(1);
 
-      window.dispatchEvent(new Event("focus"));
+      // past the staleness window, so becoming visible refetches
+      await vi.advanceTimersByTimeAsync(5000);
+      setVisibility("hidden");
+      setVisibility("visible");
       await vi.advanceTimersByTimeAsync(0);
       expect(client.inbox.list).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
+      setVisibility("visible");
     }
   });
 
-  // A backgrounded tab keeps polling while the network comes and goes, so the
+  // #5: window focus fired a full refresh on every return from devtools or
+  // another window, with nothing collapsing the bursts
+  it("ignores window focus and skips visibility refreshes while data is fresh", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = makeMockClient();
+      renderHook(() => useInbox(client, { pollInterval: 0 }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(client.inbox.list).toHaveBeenCalledTimes(1);
+
+      for (let i = 0; i < 5; i++) {
+        window.dispatchEvent(new Event("focus"));
+        setVisibility("hidden");
+        setVisibility("visible");
+        await vi.advanceTimersByTimeAsync(500);
+      }
+      expect(client.inbox.list).toHaveBeenCalledTimes(1);
+      expect(client.inbox.unreadCount).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      setVisibility("visible");
+    }
+  });
+
+  it("does not refresh on visibility when refreshOnFocus is false", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = makeMockClient();
+      renderHook(() =>
+        useInbox(client, { pollInterval: 0, refreshOnFocus: false }),
+      );
+      await vi.advanceTimersByTimeAsync(10_000);
+      setVisibility("hidden");
+      setVisibility("visible");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(client.inbox.list).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      setVisibility("visible");
+    }
+  });
+
+  it("does not poll while the tab is hidden", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = makeMockClient();
+      renderHook(() => useInbox(client, { pollInterval: 1000 }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(client.inbox.unreadCount).toHaveBeenCalledTimes(1);
+
+      setVisibility("hidden");
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(client.inbox.unreadCount).toHaveBeenCalledTimes(1);
+
+      // coming back after the data went stale catches up with one refresh
+      setVisibility("visible");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(client.inbox.list).toHaveBeenCalledTimes(2);
+      expect(client.inbox.unreadCount).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+      setVisibility("visible");
+    }
+  });
+
+  it("shares one request between concurrent refreshes; an explicit refresh ignores staleness", async () => {
+    const client = makeMockClient();
+    const { result } = renderHook(() => useInbox(client, { pollInterval: 0 }));
+
+    // mount's refresh is still in flight; these join it
+    await act(() =>
+      Promise.all([
+        result.current.refresh(),
+        result.current.refreshIfStale(),
+      ]),
+    );
+    expect(client.inbox.list).toHaveBeenCalledTimes(1);
+
+    // fresh data: an automatic-style refresh is skipped, an explicit one is not
+    await act(() => result.current.refreshIfStale());
+    expect(client.inbox.list).toHaveBeenCalledTimes(1);
+    await act(() => result.current.refresh());
+    expect(client.inbox.list).toHaveBeenCalledTimes(2);
+  });
+
+  // A visible tab keeps polling while the network comes and goes, so the
   // transport rejects (TypeError) rather than resolving to { data, error }.
   it("surfaces a rejected poll as error state instead of an unhandled rejection", async () => {
     const unhandled: unknown[] = [];

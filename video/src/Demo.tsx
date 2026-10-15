@@ -152,6 +152,7 @@ const inboxState: InboxPanelProps["inbox"] = {
   hasMore: false,
   error: null,
   refresh: async () => {},
+  refreshIfStale: async () => {},
   loadMore: async () => {},
   markRead: async () => {},
   markAllRead: async () => {},

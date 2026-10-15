@@ -114,8 +114,8 @@ Every session endpoint is scoped to the caller — users can only ever see and m
 
 ### React (`better-inbox/react`)
 
-- `<InboxButton client={authClient} />` — bell + badge + panel. Props: `onNavigate`, `renderItem`, `pollInterval` (default 30s; unread count only, full refresh on window focus and panel open), `filter`, `organizationId`, `className`. Opens on an **Unread** tab (fetched server-side with `filter: "unread"`) with **All** second; passing `filter` locks the list and hides the tabs.
-- `useInbox(client, options)` — build your own UI: `{ notifications, unreadCount, isLoading, hasMore, loadMore, markRead, markAllRead, refresh }`. Options: `pollInterval`, `pageSize`, `filter`, `organizationId`.
+- `<InboxButton client={authClient} />` — bell + badge + panel. Props: `onNavigate`, `renderItem`, `pollInterval` (default 30s; unread count only, paused while the tab is hidden), `refreshOnFocus` (default `true`; full refresh when the tab becomes visible), `filter`, `organizationId`, `className`. Visibility and panel-open refreshes are skipped when the data is under 5s old. Opens on an **Unread** tab (fetched server-side with `filter: "unread"`) with **All** second; passing `filter` locks the list and hides the tabs.
+- `useInbox(client, options)` — build your own UI: `{ notifications, unreadCount, isLoading, hasMore, loadMore, markRead, markAllRead, refresh, refreshIfStale }`. Options: `pollInterval`, `pageSize`, `filter`, `organizationId`, `refreshOnFocus`. `refresh()` always fetches (concurrent calls share one request); `refreshIfStale()` skips if the data is under 5s old.
 - `filter: "unread"` fetches only unread rows, so a page is a full page — `useInbox(authClient, { filter: "unread", pageSize: 5 })` yields five unread notifications instead of five rows you then filter down to however many are unread. Rows you mark read stay in the list until the next `refresh()`, and `loadMore()` accounts for them when paging.
 - `<InboxPanel inbox={useInbox(...)} />` — the panel without the bell. Pass `view` + `onViewChange` to control its tabs; uncontrolled it defaults to Unread.
 
@@ -129,7 +129,7 @@ index("notification_user_created_idx").on(table.userId, table.createdAt)
 
 ## What this is not (yet)
 
-Email/push channels, preferences, digests, realtime websockets — out of scope for v0.1 by design. Polling + focus refetch covers the badge honestly. If you need multi-channel delivery pipelines, look at [Novu](https://novu.co) or [betternotify](https://github.com/better-notify/better-notify); better-inbox is the thin, DB-owned layer for the in-app half.
+Email/push channels, preferences, digests, realtime websockets — out of scope for v0.1 by design. Polling + refetch on tab visibility covers the badge honestly. If you need multi-channel delivery pipelines, look at [Novu](https://novu.co) or [betternotify](https://github.com/better-notify/better-notify); better-inbox is the thin, DB-owned layer for the in-app half.
 
 ## License
 
