@@ -52,7 +52,7 @@ export type UseInboxOptions = {
   refreshOnFocus?: boolean;
 };
 
-// Automatic refreshes (tab visible, panel open) within this window of the last
+// Automatic refreshes (the tab becoming visible) within this window of the last
 // successful one are skipped (refreshIfStale). Explicit refresh() calls ignore
 // it, though they still join a request already in flight for the same scope.
 const STALE_MS = 5_000;
@@ -106,7 +106,7 @@ export function useInbox(
     if (res.data && scopeRef.current === scope) setUnreadCount(res.data.count);
   }, [organizationId, scope]);
 
-  // Mount, tab focus and panel open can all fire within a few ms of each other.
+  // Mount, tab visibility and panel open can all fire within a few ms of each other.
   // Calls for the same scope share one in-flight request, and automatic
   // triggers skip a refresh when this scope's data is still fresh. Both are
   // keyed by scope so a scope change always fetches.

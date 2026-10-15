@@ -5,3 +5,7 @@ dist
 demo/.next
 demo/*.db
 .claude
+
+# example apps: local databases and e2e run output
+examples/**/*.db
+examples/**/.e2e

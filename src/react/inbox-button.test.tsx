@@ -86,6 +86,18 @@ describe("InboxButton", () => {
     expect(client.inbox.unreadCount).toHaveBeenCalledTimes(1);
   });
 
+  // Opening the bell is a deliberate look: it must show what arrived since
+  // mount, even seconds later, not skip as fresh (0.4.0 regression).
+  it("refetches when the panel opens right after mount", async () => {
+    const client = makeMockClient();
+    render(<InboxButton client={client} />);
+    await waitFor(() => expect(screen.getByText("2")).toBeTruthy());
+    expect(client.inbox.list).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+    await waitFor(() => expect(client.inbox.list).toHaveBeenCalledTimes(2));
+  });
+
   it("fetches only unread rows and drops the tabs when filtered", async () => {
     const client = makeMockClient();
     render(<InboxButton client={client} filter="unread" />);
