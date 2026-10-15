@@ -18,6 +18,7 @@ export const authClient = createAuthClient({ plugins: [inboxClient()] });
 // UI (client component)
 import { InboxButton } from "better-inbox/react";
 <InboxButton client={authClient} onNavigate={(href) => router.push(href)} />
+// TanStack Start/Router: onNavigate={(href) => router.navigate({ href })} with useRouter() from @tanstack/react-router; mount in __root so navigations don't remount it. See examples/tanstack-start.
 
 ## Send (server-only, never an HTTP route)
 

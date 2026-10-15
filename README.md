@@ -64,6 +64,15 @@ export function Navbar() {
 }
 ```
 
+TanStack Start / Router: pass the whole href to `router.navigate({ href })`, and mount the button in the root layout so navigations don't remount it. A working app with an end-to-end suite is in [`examples/tanstack-start`](examples/tanstack-start).
+
+```tsx
+import { useRouter } from "@tanstack/react-router";
+
+const router = useRouter();
+<InboxButton client={authClient} onNavigate={(href) => router.navigate({ href })} />
+```
+
 **5. Send notifications** from any server code — a server action, a webhook handler, a cron job:
 
 ```ts
