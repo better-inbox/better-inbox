@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createTestAuthWithOrg, signUpUser } from "./test-utils";
+import {
+  createTestAuth,
+  createTestAuthWithOrg,
+  signUpUser,
+} from "./test-utils";
 
 async function setupOrg() {
   const auth = createTestAuthWithOrg();
@@ -81,29 +85,177 @@ describe("org fan-out", () => {
   it("errors cleanly on bad addressing", async () => {
     const { auth, org } = await setupOrg();
 
-    // no matching members
+    // neither userId nor organizationId
+    await expect(
+      auth.api.notify({ body: { type: "t", title: "x" } }),
+    ).rejects.toThrow(/Provide userId, organizationId, or both/);
+
+    // roles / excludeUserIds only make sense with fan-out
+    await expect(
+      auth.api.notify({
+        body: { userId: "u1", roles: ["admin"], type: "t", title: "x" },
+      }),
+    ).rejects.toThrow(/only apply to organization fan-out/);
     await expect(
       auth.api.notify({
         body: {
+          userId: "u1",
           organizationId: org.id,
-          roles: ["superadmin"],
+          excludeUserIds: ["u2"],
           type: "t",
           title: "x",
         },
       }),
-    ).rejects.toThrow(/no matching members/);
+    ).rejects.toThrow(/only apply to organization fan-out/);
+  });
 
-    // neither userId nor organizationId
-    await expect(
-      auth.api.notify({ body: { type: "t", title: "x" } }),
-    ).rejects.toThrow();
+  it("returns count 0 when roles leave no members", async () => {
+    const { auth, org } = await setupOrg();
 
-    // both userId and organizationId
+    const res = await auth.api.notify({
+      body: {
+        organizationId: org.id,
+        roles: ["superadmin"],
+        type: "t",
+        title: "x",
+      },
+    });
+    expect(res).toEqual({ count: 0, notifications: [] });
+  });
+
+  it("throws when the organization has no members at all", async () => {
+    const { auth, alice, org } = await setupOrg();
+    const ctx = await auth.$context;
+    await ctx.adapter.deleteMany({
+      model: "member",
+      where: [{ field: "organizationId", value: org.id }],
+    });
+
     await expect(
       auth.api.notify({
-        body: { userId: "u1", organizationId: org.id, type: "t", title: "x" },
+        body: { organizationId: org.id, type: "t", title: "x" },
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/Organization has no members/);
+
+    const list = await auth.api.listNotifications({
+      headers: alice.headers,
+      query: {},
+    });
+    expect(list.notifications).toHaveLength(0);
+  });
+
+  it("skips excludeUserIds during fan-out (the actor gets no row)", async () => {
+    const { auth, alice, bob, carol, org } = await setupOrg();
+
+    const res = await auth.api.notify({
+      body: {
+        organizationId: org.id,
+        excludeUserIds: [alice.user.id],
+        type: "comment.added",
+        title: "New comment",
+      },
+    });
+    expect(res.count).toBe(2);
+
+    const aliceList = await auth.api.listNotifications({
+      headers: alice.headers,
+      query: {},
+    });
+    expect(aliceList.notifications).toHaveLength(0);
+
+    for (const member of [bob, carol]) {
+      const list = await auth.api.listNotifications({
+        headers: member.headers,
+        query: {},
+      });
+      expect(list.notifications).toHaveLength(1);
+    }
+  });
+
+  it("returns count 0 when roles and excludeUserIds leave nobody", async () => {
+    const { auth, alice, org } = await setupOrg();
+
+    const res = await auth.api.notify({
+      body: {
+        organizationId: org.id,
+        roles: ["owner"],
+        excludeUserIds: [alice.user.id],
+        type: "t",
+        title: "x",
+      },
+    });
+    expect(res).toEqual({ count: 0, notifications: [] });
+  });
+
+  it("stamps user + organization as one row, visible through the org filter", async () => {
+    const { auth, bob, org } = await setupOrg();
+
+    const res = await auth.api.notify({
+      body: {
+        userId: bob.user.id,
+        organizationId: org.id,
+        type: "task.assigned",
+        title: "Assigned to you",
+      },
+    });
+    expect(res.count).toBe(1);
+    expect(res.notifications[0]).toMatchObject({
+      userId: bob.user.id,
+      organizationId: org.id,
+    });
+
+    const orgOnly = await auth.api.listNotifications({
+      headers: bob.headers,
+      query: { organizationId: org.id },
+    });
+    expect(orgOnly.notifications).toHaveLength(1);
+    expect(orgOnly.notifications[0]).toMatchObject({
+      title: "Assigned to you",
+      organizationId: org.id,
+    });
+  });
+
+  it("refuses userId + organizationId for a non-member and writes no row", async () => {
+    const { auth, alice, org } = await setupOrg();
+    const dave = await signUpUser(auth, "dave@example.com");
+
+    await expect(
+      auth.api.notify({
+        body: {
+          userId: dave.user.id,
+          organizationId: org.id,
+          type: "t",
+          title: "x",
+        },
+      }),
+    ).rejects.toThrow(/not a member of this organization/);
+
+    const daveList = await auth.api.listNotifications({
+      headers: dave.headers,
+      query: {},
+    });
+    expect(daveList.notifications).toHaveLength(0);
+    const aliceList = await auth.api.listNotifications({
+      headers: alice.headers,
+      query: {},
+    });
+    expect(aliceList.notifications).toHaveLength(0);
+  });
+
+  it("refuses userId + organizationId when the organization plugin is missing", async () => {
+    const auth = createTestAuth();
+    const alice = await signUpUser(auth, "alice@example.com");
+
+    await expect(
+      auth.api.notify({
+        body: {
+          userId: alice.user.id,
+          organizationId: "org_1",
+          type: "t",
+          title: "x",
+        },
+      }),
+    ).rejects.toThrow(/requires the organization plugin/);
   });
 
   it("refuses fan-out beyond maxFanout and writes zero rows", async () => {

@@ -3,9 +3,12 @@ import { defineErrorCodes } from "better-auth";
 export const INBOX_ERROR_CODES = defineErrorCodes({
   NOTIFICATION_NOT_FOUND: "Notification not found",
   USER_OR_ORGANIZATION_REQUIRED:
-    "Provide exactly one of userId or organizationId",
+    "Provide userId, organizationId, or both",
+  FAN_OUT_OPTIONS_WITHOUT_USER:
+    "roles and excludeUserIds only apply to organization fan-out; omit them when sending to a userId",
   ORGANIZATION_PLUGIN_REQUIRED:
     "organizationId requires the organization plugin",
-  ORGANIZATION_HAS_NO_MEMBERS: "Organization has no matching members",
+  USER_NOT_IN_ORGANIZATION: "User is not a member of this organization",
+  ORGANIZATION_HAS_NO_MEMBERS: "Organization has no members",
   FAN_OUT_LIMIT_EXCEEDED: "Organization member count exceeds maxFanout",
 });
