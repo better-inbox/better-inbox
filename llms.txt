@@ -25,7 +25,7 @@ import { InboxButton } from "better-inbox/react";
 await auth.api.notify({ body: { userId, type: "comment.reply", title: "...", href: "/x", body: "...", data: {...} } });
 // org fan-out (requires better-auth organization plugin); one row per member:
 await auth.api.notify({ body: { organizationId, roles: ["owner","admin"], type: "billing.payment_failed", title: "..." } });
-// exactly one of userId | organizationId. Fan-out capped at inbox({ maxFanout: 1000 }).
+// userId | organizationId | both. userId + organizationId writes one row for that member (throws USER_NOT_IN_ORGANIZATION if not a member). roles/excludeUserIds apply only to fan-out (rejected with userId). excludeUserIds skips e.g. the actor. Roles/exclusion leaving nobody returns { count: 0 }; an org with zero members throws. Fan-out capped at inbox({ maxFanout: 1000 }).
 
 ## Read/mutate (session-scoped to caller)
 

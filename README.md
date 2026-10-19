@@ -120,6 +120,37 @@ await auth.api.notify({
 });
 ```
 
+To leave out the member who caused the event, pass `excludeUserIds`. If `roles` and `excludeUserIds` leave nobody, `notify` returns `{ count: 0, notifications: [] }`; an organization with no members at all still throws.
+
+```ts
+// A comment in an org: tell every member except the author
+await auth.api.notify({
+  body: {
+    organizationId: post.orgId,
+    excludeUserIds: [session.user.id], // the actor gets no row
+    type: "comment.added",
+    title: `${session.user.name} commented`,
+    href: `/posts/${post.id}`,
+  },
+});
+```
+
+Pass `userId` together with `organizationId` to notify one member in the org's context. It writes a single row stamped with `organizationId`, so it shows up under that org's `organizationId` filter. `notify` throws if the user is not a member.
+
+```ts
+await auth.api.notify({
+  body: {
+    userId: task.assigneeId,
+    organizationId: task.orgId,
+    type: "task.assigned",
+    title: "Assigned to you",
+    href: `/tasks/${task.id}`,
+  },
+});
+```
+
+`roles` and `excludeUserIds` apply only to fan-out, so they are rejected when `userId` is set.
+
 Fan-out is capped at 1,000 members by default (`inbox({ maxFanout })` to change). Over the cap, `notify` throws instead of hammering your database.
 
 ## API
@@ -128,7 +159,7 @@ Fan-out is capped at 1,000 members by default (`inbox({ maxFanout })` to change)
 
 | Endpoint | Access | Description |
 |----------|--------|-------------|
-| `auth.api.notify({ body })` | server-only | Create notification(s). Exactly one of `userId` / `organizationId`; optional `roles`, `body`, `href`, `data` (JSON) |
+| `auth.api.notify({ body })` | server-only | Create notification(s). `userId`, `organizationId`, or both (one member's row, stamped with the org; the user must be a member). Org fan-out takes optional `roles` and `excludeUserIds`; `body`, `href`, `data` (JSON) |
 | `auth.api.listNotifications({ query })` | session | `{ filter?: "unread"\|"all", limit? (≤100), offset?, organizationId? }` → `{ notifications, hasMore }` |
 | `auth.api.markRead({ body: { id } })` | session | Marks one of the caller's notifications read |
 | `auth.api.markAllRead({ body })` | session | Optional `{ organizationId }` scope |

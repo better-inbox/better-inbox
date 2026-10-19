@@ -13,15 +13,22 @@ const notifyBodySchema = z
     userId: z.string().optional(),
     organizationId: z.string().optional(),
     roles: z.array(z.string()).optional(),
+    excludeUserIds: z.array(z.string()).optional(),
     type: z.string(),
     title: z.string(),
     body: z.string().optional(),
     href: z.string().optional(),
     data: z.record(z.string(), z.unknown()).optional(),
   })
-  .refine((body) => !!body.userId !== !!body.organizationId, {
+  .refine((body) => !!body.userId || !!body.organizationId, {
     message: INBOX_ERROR_CODES.USER_OR_ORGANIZATION_REQUIRED.message,
-  });
+  })
+  .refine(
+    (body) =>
+      !body.userId ||
+      (body.roles === undefined && body.excludeUserIds === undefined),
+    { message: INBOX_ERROR_CODES.FAN_OUT_OPTIONS_WITHOUT_USER.message },
+  );
 
 export const notify = (options: ResolvedInboxOptions) =>
   createAuthEndpoint.serverOnly(
@@ -30,7 +37,8 @@ export const notify = (options: ResolvedInboxOptions) =>
       body: notifyBodySchema,
     },
     async (ctx) => {
-      const { userId, organizationId, roles, ...payload } = ctx.body;
+      const { userId, organizationId, roles, excludeUserIds, ...payload } =
+        ctx.body;
 
       const createFor = (targetUserId: string) =>
         ctx.context.adapter.create<Omit<Notification, "id">, Notification>({
@@ -59,6 +67,24 @@ export const notify = (options: ResolvedInboxOptions) =>
         );
       }
 
+      if (userId) {
+        const membership = await ctx.context.adapter.findOne<{ id: string }>({
+          model: "member",
+          where: [
+            { field: "userId", value: userId },
+            { field: "organizationId", value: organizationId },
+          ],
+        });
+        if (!membership) {
+          throw APIError.from(
+            "BAD_REQUEST",
+            INBOX_ERROR_CODES.USER_NOT_IN_ORGANIZATION,
+          );
+        }
+        const notification = await createFor(userId);
+        return { count: 1, notifications: [notification] };
+      }
+
       const members = await ctx.context.adapter.findMany<{
         userId: string;
         role: string;
@@ -67,6 +93,12 @@ export const notify = (options: ResolvedInboxOptions) =>
         where: [{ field: "organizationId", value: organizationId }],
         limit: options.maxFanout + 1,
       });
+      if (members.length === 0) {
+        throw APIError.from(
+          "BAD_REQUEST",
+          INBOX_ERROR_CODES.ORGANIZATION_HAS_NO_MEMBERS,
+        );
+      }
       if (members.length > options.maxFanout) {
         throw APIError.from(
           "BAD_REQUEST",
@@ -74,17 +106,13 @@ export const notify = (options: ResolvedInboxOptions) =>
         );
       }
 
-      const targets = roles?.length
-        ? members.filter((member) =>
-            member.role.split(",").some((role) => roles.includes(role)),
-          )
-        : members;
-      if (targets.length === 0) {
-        throw APIError.from(
-          "BAD_REQUEST",
-          INBOX_ERROR_CODES.ORGANIZATION_HAS_NO_MEMBERS,
-        );
-      }
+      const excluded = new Set(excludeUserIds ?? []);
+      const targets = members.filter(
+        (member) =>
+          !excluded.has(member.userId) &&
+          (!roles?.length ||
+            member.role.split(",").some((role) => roles.includes(role))),
+      );
 
       const notifications: Notification[] = [];
       for (const member of targets) {
