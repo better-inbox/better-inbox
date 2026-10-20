@@ -20,6 +20,8 @@ npm install @byo-oss/notifications
 
 ## Quickstart
 
+Using a coding agent? `npx skills add byo-oss/notifications` installs a skill that walks it through these steps (`npx skills sync` picks it up from `node_modules` too).
+
 **1. Add the plugin** to your better-auth config:
 
 ```ts
