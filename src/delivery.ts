@@ -135,6 +135,8 @@ async function presentUserIds(
         value: new Date(now.getTime() - options.presenceWindow),
       },
     ],
+    // findMany returns 100 rows by default; one row per user at most
+    limit: userIds.length,
   });
   return new Set(rows.map((row) => row.userId));
 }
@@ -273,26 +275,19 @@ async function attemptDeliveries(
   const result = { sent: 0, skipped: 0, retrying: 0, failed: 0 };
   if (deliveries.length === 0) return result;
 
+  const notificationIds = [...new Set(deliveries.map((d) => d.notificationId))];
+  const userIds = [...new Set(deliveries.map((d) => d.userId))];
+  // findMany returns 100 rows by default, and batchSize may be larger
   const [notifications, users] = await Promise.all([
     context.adapter.findMany<Notification>({
       model: "notification",
-      where: [
-        {
-          field: "id",
-          operator: "in",
-          value: [...new Set(deliveries.map((d) => d.notificationId))],
-        },
-      ],
+      where: [{ field: "id", operator: "in", value: notificationIds }],
+      limit: notificationIds.length,
     }),
     context.adapter.findMany<User>({
       model: "user",
-      where: [
-        {
-          field: "id",
-          operator: "in",
-          value: [...new Set(deliveries.map((d) => d.userId))],
-        },
-      ],
+      where: [{ field: "id", operator: "in", value: userIds }],
+      limit: userIds.length,
     }),
   ]);
   const notificationsById = new Map(notifications.map((n) => [n.id, n]));

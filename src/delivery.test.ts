@@ -494,6 +494,88 @@ describe("processDeliveries", () => {
     expect(await auth.api.processDeliveries({})).toMatchObject({ sent: 1 });
   });
 
+  // the adapter's findMany returns 100 rows unless told otherwise
+  describe("past 100 rows", () => {
+    async function bigOrg(options: InboxOptions, size: number) {
+      const auth = createTestAuthWithOrg(options);
+      const { adapter } = await auth.$context;
+      const org = await adapter.create<any, { id: string }>({
+        model: "organization",
+        data: { name: "Big", slug: "big", createdAt: new Date() },
+      });
+      for (let i = 0; i < size; i++) {
+        const user = await adapter.create<any, { id: string }>({
+          model: "user",
+          data: {
+            name: `u${i}`,
+            email: `u${i}@example.com`,
+            emailVerified: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
+        await adapter.create({
+          model: "member",
+          data: {
+            organizationId: org.id,
+            userId: user.id,
+            role: "member",
+            createdAt: new Date(),
+          },
+        });
+        await adapter.create({
+          model: "inboxPresence",
+          data: { userId: user.id, lastSeenAt: new Date() },
+        });
+      }
+      return { auth, org };
+    }
+
+    it("holds the email for every present member of a large org", async () => {
+      const { options } = emailAfter15();
+      const { auth, org } = await bigOrg(options, 120);
+
+      await auth.api.notify({
+        body: {
+          organizationId: org.id,
+          type: "billing.payment_failed",
+          title: "Payment failed",
+        },
+      });
+
+      const rows = await (await auth.$context).adapter.findMany<any>({
+        model: "notificationDelivery",
+        limit: 1000,
+      });
+      expect(rows).toHaveLength(120);
+      expect(
+        rows.filter((d) => new Date(d.scheduledFor).getTime() <= Date.now()),
+      ).toEqual([]);
+    });
+
+    it("sends a batch larger than 100 in one sweep", async () => {
+      const email = fakeChannel();
+      const { auth, org } = await bigOrg(
+        {
+          channels: { email: email.channel },
+          routes: { "*": [{ channel: "email" }] },
+          batchSize: 150,
+        },
+        120,
+      );
+
+      await auth.api.notify({
+        body: { organizationId: org.id, type: "x", title: "Hello" },
+      });
+
+      expect(await auth.api.processDeliveries({})).toMatchObject({
+        sent: 120,
+        hasMore: false,
+      });
+      expect(new Set(email.sent.map((s) => s.user.email)).size).toBe(120);
+    });
+  });
+
   it("reports hasMore when more deliveries are due than the batch holds", async () => {
     const email = fakeChannel();
     const auth = createTestAuth({
