@@ -10,6 +10,7 @@ export type InboxNotification = {
   href?: string | null;
   data?: Record<string, unknown> | null;
   read: boolean;
+  seenAt?: Date | string | null;
   createdAt: Date | string;
 };
 
@@ -35,6 +36,13 @@ export type InboxFetchClient = {
     }) => Promise<{ data: unknown; error: unknown }>;
     markAllRead: (input: {
       organizationId?: string;
+    }) => Promise<{ data: unknown; error: unknown }>;
+    /**
+     * Required: without it nothing is marked seen, and every "email if unread"
+     * goes out even for notifications the person looked at.
+     */
+    markSeen: (input: {
+      ids: string[];
     }) => Promise<{ data: unknown; error: unknown }>;
   };
 };
@@ -195,6 +203,30 @@ export function useInbox(
     await clientRef.current.inbox.markRead({ id });
   }, []);
 
+  // Seen is what cancels a pending "email if unread" delivery. Ids go out once
+  // per mount; a failed request releases them for the next render to retry.
+  const sentSeenRef = useRef(new Set<string>());
+  const markSeen = useCallback(async (ids: string[]) => {
+    const fresh = ids.filter((id) => !sentSeenRef.current.has(id));
+    if (fresh.length === 0) return;
+    for (const id of fresh) sentSeenRef.current.add(id);
+    const seenAt = new Date();
+    const freshIds = new Set(fresh);
+    setNotifications((prev) =>
+      prev.map((n) => (freshIds.has(n.id) && !n.seenAt ? { ...n, seenAt } : n)),
+    );
+    // the endpoint takes 100 ids, and a few Load more clicks can pass that
+    for (let i = 0; i < fresh.length; i += 100) {
+      const chunk = fresh.slice(i, i + 100);
+      try {
+        const res = await clientRef.current.inbox.markSeen({ ids: chunk });
+        if (res.error) throw res.error;
+      } catch {
+        for (const id of chunk) sentSeenRef.current.delete(id);
+      }
+    }
+  }, []);
+
   const markAllRead = useCallback(async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     setUnreadCount(0);
@@ -251,6 +283,7 @@ export function useInbox(
     refreshIfStale,
     loadMore,
     markRead,
+    markSeen,
     markAllRead,
   };
 }

@@ -9,6 +9,7 @@ export const inboxClient = () => {
       "/inbox/list": "GET",
       "/inbox/unread-count": "GET",
       "/inbox/mark-read": "POST",
+      "/inbox/mark-seen": "POST",
       "/inbox/mark-all-read": "POST",
     },
   } satisfies BetterAuthClientPlugin;

@@ -27,26 +27,44 @@ await auth.api.notify({ body: { userId, type: "comment.reply", title: "...", hre
 await auth.api.notify({ body: { organizationId, roles: ["owner","admin"], type: "billing.payment_failed", title: "..." } });
 // userId | organizationId | both. userId + organizationId writes one row for that member (throws USER_NOT_IN_ORGANIZATION if not a member). roles/excludeUserIds apply only to fan-out (rejected with userId). excludeUserIds skips e.g. the actor. Roles/exclusion leaving nobody returns { count: 0 }; an org with zero members throws. Fan-out capped at inbox({ maxFanout: 1000 }).
 
+## Email if unread (optional; npm install @wraps.dev/email)
+
+import { wrapsEmail } from "better-inbox/wraps";
+inbox({
+  appUrl: "https://app.acme.com",
+  channels: { email: wrapsEmail({ from: "Acme <notify@acme.com>" /*, client: new WrapsEmail({...}), render: (ctx) => ({ subject, html, text }) */ }) },
+  routes: { "billing.payment_failed": [{ channel: "email", ifUnreadAfter: { minutes: 15 }, throttle: { hours: 24 } }], "security.new_login": [{ channel: "email", cancelIfRead: false }] }, // keyed by type; "*" fallback; no rule = in-app only; a channel at most once per type
+  shouldDeliver: ({ notification, user, channel }) => true, // your own opt-out check
+  // presenceWindow: 120000, maxAttempts: 5, batchSize: 100
+});
+await auth.api.processDeliveries({}); // REQUIRED from a cron (every minute): sends delayed emails and retries → { sent, skipped, retrying, failed, hasMore }
+// The email is skipped if the notification is read, or seen (seenAt, set once a row is ≥50% on screen for 1s in a visible tab), unless cancelIfRead: false. throttle: at most one sent email per (user, type, channel) per window; extras skipped with detail "throttled" (best-effort across concurrent processes). Impersonated sessions (admin plugin) don't count as presence. Users with no unread-count poll within presenceWindow are "away": ifUnreadAfter emails go out right away (sendNowIfAway: false to always wait). Due-now emails send inside notify only with advanced.backgroundTasks.handler and <=25 rows; otherwise on the next sweep. At-least-once; atomic claim; backoff 1m doubling to 1h; rows in notificationDelivery (status pending|sending|sent|skipped|failed, detail).
+// A channel is { deliver({ notification, user, appUrl }) } that throws on failure.
+
 ## Read/mutate (session-scoped to caller)
 
 auth.api.listNotifications({ headers, query: { filter: "unread"|"all", limit: 20, offset: 0, organizationId } }) → { notifications, hasMore }
 auth.api.markRead({ headers, body: { id } })
+auth.api.markSeen({ headers, body: { ids } }) // ≤100; cancels pending emails; InboxPanel calls it for rows actually on screen
 auth.api.markAllRead({ headers, body: { organizationId? } })
 auth.api.unreadCount({ headers, query: { organizationId? } }) → { count }
-// same methods on the client: authClient.inbox.list / markRead / markAllRead / unreadCount
+// same methods on the client: authClient.inbox.list / markRead / markSeen / markAllRead / unreadCount
 
 ## React hook
 
-const { notifications, unreadCount, isLoading, hasMore, loadMore, markRead, markAllRead, refresh, refreshIfStale } = useInbox(authClient, { pollInterval: 30000, pageSize: 20, filter: "unread"|"all", organizationId, refreshOnFocus: true });
+const { notifications, unreadCount, isLoading, hasMore, loadMore, markRead, markSeen, markAllRead, refresh, refreshIfStale } = useInbox(authClient, { pollInterval: 30000, pageSize: 20, filter: "unread"|"all", organizationId, refreshOnFocus: true });
+const seenRef = useSeenOnView(markSeen, { delayMs: 1000, threshold: 0.5 }); // <li ref={n.read || n.seenAt ? undefined : seenRef(n.id)}>; IntersectionObserver, marks nothing without it
 // polling refetches unread count (paused while the tab is hidden); full refresh when the tab becomes visible (refreshOnFocus, skipped if data is <5s old) and always on panel open. refresh() always fetches; refreshIfStale() respects the 5s window; concurrent refreshes share one request. markRead/markAllRead are optimistic.
 // filter: "unread" fetches unread rows only, so pageSize is the count you actually get. Locally-read rows stay until refresh(); loadMore() offsets by unread rows held. Changing filter refetches. InboxButton takes the same filter prop and hides its all/unread tabs when set to "unread".
 // InboxButton opens on the "unread" tab (server-filtered), tabs ordered unread, all. InboxPanel accepts view/onViewChange; uncontrolled it defaults to "unread".
 
 ## Notes
 
-- notification fields: id, userId, organizationId?, type, title, body?, href?, data? (json), read (boolean), createdAt
+- notification fields: id, userId, organizationId?, type, title, body?, href?, data? (json), read (boolean), seenAt?, createdAt
+- 0.6 adds seenAt plus tables notificationDelivery and inboxPresence: re-run migrate after upgrading
+- 0.6 InboxFetchClient requires inbox.markSeen; a hand-built adapter must pass it or seen never cancels emails
 - components styled with shadcn CSS variables (bg-popover, text-muted-foreground, ...); zero runtime deps; shadcn not required
 - Tailwind v4: add `@source "<path>/node_modules/better-inbox/dist";` to your CSS (v4 skips node_modules)
 - InboxButton renders its own <button>; don't wrap it in one. className styles the wrapper; buttonClassName replaces the trigger's default classes (e.g. shadcn buttonVariants({ variant: "ghost", size: "icon" }))
-- recommend manual index on (userId, createdAt)
+- recommend manual index on notification (userId, createdAt); with email routes also notificationDelivery (status, scheduledFor), and with throttle (userId, type, channel, sentAt)
 - community plugin, not affiliated with better-auth

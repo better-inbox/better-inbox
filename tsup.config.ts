@@ -5,13 +5,14 @@ export default defineConfig([
     entry: {
       index: "src/index.ts",
       client: "src/client.ts",
+      wraps: "src/wraps.ts",
     },
     format: ["esm", "cjs"],
     dts: true,
     // clean is done in the build script — with two parallel configs, tsup's
     // own clean races the other config's output and can delete emitted files
     clean: false,
-    external: ["react", "better-auth", "zod"],
+    external: ["react", "better-auth", "zod", "@wraps.dev/email"],
   },
   {
     entry: {

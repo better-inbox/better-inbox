@@ -10,3 +10,4 @@ export {
   type InboxNotification,
   type UseInboxOptions,
 } from "./use-inbox";
+export { type UseSeenOnViewOptions, useSeenOnView } from "./use-seen-on-view";

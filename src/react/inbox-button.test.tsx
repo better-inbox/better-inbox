@@ -7,6 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { installFakeIntersectionObserver } from "./fake-intersection-observer";
 import { InboxButton } from "./inbox-button";
 import type { InboxFetchClient } from "./use-inbox";
 
@@ -43,13 +44,17 @@ function makeMockClient(
       markAllRead: vi
         .fn()
         .mockResolvedValue({ data: { count: 2 }, error: null }),
+      markSeen: vi.fn().mockResolvedValue({ data: { count: 0 }, error: null }),
     },
   };
 }
 
 describe("InboxButton", () => {
   // vitest runs without globals, so RTL never auto-cleans between tests
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
 
   it("shows the unread badge, opens the panel, and marks all read", async () => {
     const client = makeMockClient();
@@ -111,6 +116,58 @@ describe("InboxButton", () => {
       query: { limit: 20, offset: 0, filter: "unread" },
     });
     expect(screen.queryAllByRole("tab")).toHaveLength(0);
+  });
+
+  it("marks an unread row seen once it is on screen in the open panel, and only once", async () => {
+    const io = installFakeIntersectionObserver();
+    const markSeen = vi.fn().mockResolvedValue({ data: { count: 1 }, error: null });
+    const base = makeMockClient([
+      {
+        id: "n1",
+        userId: "u1",
+        type: "test",
+        title: "Unseen",
+        read: false,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: "n2",
+        userId: "u1",
+        type: "test",
+        title: "Already read",
+        read: true,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    const client = { inbox: { ...base.inbox, markSeen } };
+    render(<InboxButton client={client} />);
+
+    // the hook loads the list on mount, but nobody has looked at it yet
+    await waitFor(() => expect(base.inbox.list).toHaveBeenCalled());
+    expect(markSeen).not.toHaveBeenCalled();
+
+    const bell = screen.getByRole("button", { name: /notifications/i });
+    fireEvent.click(bell);
+    await waitFor(() => expect(screen.getByText("Unseen")).toBeTruthy());
+    const unseen = screen.getByText("Unseen").closest("li") as Element;
+    const read = screen.getByText("Already read").closest("li") as Element;
+    // rendered is not shown: a row below the scroll stays unseen
+    expect(io.observed()).toEqual([unseen]);
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    expect(markSeen).not.toHaveBeenCalled();
+
+    io.show([unseen, read]);
+    await waitFor(() => expect(markSeen).toHaveBeenCalledWith({ ids: ["n1"] }), {
+      timeout: 2000,
+    });
+
+    fireEvent.click(bell);
+    fireEvent.click(bell);
+    await waitFor(() => expect(screen.getByText("Unseen")).toBeTruthy());
+    // the reopened panel refetched the row without seenAt; it is not sent again
+    io.show([screen.getByText("Unseen").closest("li") as Element]);
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    expect(markSeen).toHaveBeenCalledTimes(1);
   });
 
   it("opens on the unread tab, first, and fetches unread rows", async () => {

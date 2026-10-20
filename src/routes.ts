@@ -1,10 +1,17 @@
-import type { Where } from "better-auth";
+import type { AuthContext, Where } from "better-auth";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
+import {
+  hasChannels,
+  processDueDeliveries,
+  type ResolvedDeliveryOptions,
+  scheduleDeliveries,
+  touchPresence,
+} from "./delivery";
 import { INBOX_ERROR_CODES } from "./error-codes";
 import type { Notification } from "./schema";
 
-export type ResolvedInboxOptions = {
+export type ResolvedInboxOptions = ResolvedDeliveryOptions & {
   maxFanout: number;
 };
 
@@ -40,6 +47,11 @@ export const notify = (options: ResolvedInboxOptions) =>
       const { userId, organizationId, roles, excludeUserIds, ...payload } =
         ctx.body;
 
+      const created = async (notifications: Notification[]) => {
+        await scheduleDeliveries(ctx.context, notifications, options);
+        return { count: notifications.length, notifications };
+      };
+
       const createFor = (targetUserId: string) =>
         ctx.context.adapter.create<Omit<Notification, "id">, Notification>({
           model: "notification",
@@ -53,8 +65,7 @@ export const notify = (options: ResolvedInboxOptions) =>
         });
 
       if (!organizationId) {
-        const notification = await createFor(userId!);
-        return { count: 1, notifications: [notification] };
+        return created([await createFor(userId!)]);
       }
 
       const hasOrgPlugin = ctx.context.options.plugins?.some(
@@ -81,8 +92,7 @@ export const notify = (options: ResolvedInboxOptions) =>
             INBOX_ERROR_CODES.USER_NOT_IN_ORGANIZATION,
           );
         }
-        const notification = await createFor(userId);
-        return { count: 1, notifications: [notification] };
+        return created([await createFor(userId)]);
       }
 
       const members = await ctx.context.adapter.findMany<{
@@ -118,9 +128,43 @@ export const notify = (options: ResolvedInboxOptions) =>
       for (const member of targets) {
         notifications.push(await createFor(member.userId));
       }
-      return { count: notifications.length, notifications };
+      return created(notifications);
     },
   );
+
+export const processDeliveries = (options: ResolvedInboxOptions) =>
+  createAuthEndpoint.serverOnly(
+    {
+      method: "POST",
+      body: z
+        .object({ limit: z.number().int().min(1).max(1000).optional() })
+        .optional(),
+    },
+    async (ctx) => processDueDeliveries(ctx.context, options, ctx.body?.limit),
+  );
+
+// The inbox polls unread-count while the tab is visible and on every refresh,
+// which makes it the presence heartbeat for "send now if the user is away".
+// list is left out: a refresh fetches both at once, and two first-time
+// heartbeats would race to create the same unique row.
+async function heartbeat(
+  context: AuthContext & {
+    session: {
+      user: { id: string };
+      session: { impersonatedBy?: string | null };
+    };
+  },
+  options: ResolvedInboxOptions,
+) {
+  if (!hasChannels(options)) return;
+  // an admin impersonating the user (admin plugin) is not the user being around
+  if (context.session.session.impersonatedBy) return;
+  try {
+    await touchPresence(context, context.session.user.id);
+  } catch (error) {
+    context.logger.error("[better-inbox] failed to record presence", error);
+  }
+}
 
 const listQuerySchema = z
   .object({
@@ -192,6 +236,27 @@ export const markRead = () =>
     },
   );
 
+export const markSeen = () =>
+  createAuthEndpoint(
+    "/inbox/mark-seen",
+    {
+      method: "POST",
+      body: z.object({ ids: z.array(z.string()).min(1).max(100) }),
+      use: [sessionMiddleware],
+    },
+    async (ctx) => {
+      const count = await ctx.context.adapter.updateMany({
+        model: "notification",
+        where: [
+          { field: "userId", value: ctx.context.session.user.id },
+          { field: "id", operator: "in", value: ctx.body.ids },
+        ],
+        update: { seenAt: new Date() },
+      });
+      return { count };
+    },
+  );
+
 export const markAllRead = () =>
   createAuthEndpoint(
     "/inbox/mark-all-read",
@@ -217,7 +282,7 @@ export const markAllRead = () =>
     },
   );
 
-export const unreadCount = () =>
+export const unreadCount = (options: ResolvedInboxOptions) =>
   createAuthEndpoint(
     "/inbox/unread-count",
     {
@@ -226,6 +291,7 @@ export const unreadCount = () =>
       use: [sessionMiddleware],
     },
     async (ctx) => {
+      await heartbeat(ctx.context, options);
       const where: Where[] = [
         { field: "userId", value: ctx.context.session.user.id },
         { field: "read", value: false },
