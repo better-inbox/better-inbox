@@ -1,5 +1,6 @@
 import type { BetterAuthPlugin, InferOptionSchema } from "better-auth";
 import { mergeSchema } from "better-auth/db";
+import { organizationCleanupHook } from "./data";
 import type { DeliveryRule, InboxChannel, ShouldDeliver } from "./delivery";
 import { INBOX_ERROR_CODES } from "./error-codes";
 import {
@@ -99,6 +100,7 @@ export const inbox = <Channel extends string = string>(
       markAllRead: markAllRead(),
       unreadCount: unreadCount(opts),
     },
+    hooks: { after: [organizationCleanupHook] },
     $ERROR_CODES: INBOX_ERROR_CODES,
     options,
   } satisfies BetterAuthPlugin;
@@ -112,5 +114,10 @@ export type {
   ShouldDeliver,
   SweepResult,
 } from "./delivery";
+export {
+  type AuthWithContext,
+  deleteMemberData,
+  deleteOrganizationData,
+} from "./data";
 export { INBOX_ERROR_CODES } from "./error-codes";
 export type { DeliveryStatus, Notification, NotificationDelivery } from "./schema";
