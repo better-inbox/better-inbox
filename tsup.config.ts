@@ -6,14 +6,21 @@ export default defineConfig([
       index: "src/index.ts",
       client: "src/client.ts",
       wraps: "src/wraps.ts",
-      testing: "src/testing.ts",
     },
     format: ["esm", "cjs"],
     dts: true,
     // clean is done in the build script — with two parallel configs, tsup's
     // own clean races the other config's output and can delete emitted files
     clean: false,
-    external: ["react", "better-auth", "zod", "@wraps.dev/email", "vitest"],
+    external: ["react", "better-auth", "zod", "@wraps.dev/email"],
+  },
+  {
+    // ESM only: vitest throws when it's require()d
+    entry: { testing: "src/testing.ts" },
+    format: ["esm"],
+    dts: true,
+    clean: false,
+    external: ["better-auth", "vitest"],
   },
   {
     entry: {

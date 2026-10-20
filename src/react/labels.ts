@@ -10,6 +10,8 @@ export type InboxLabels = {
   loadMore: string;
   /** Announced to screen readers when the unread count changes. */
   unreadCount: (count: number) => string;
+  /** The count on the bell's badge. */
+  badge: (count: number) => string;
   /** A notification's age under its title. */
   relativeTime: (date: Date) => string;
 };
@@ -36,6 +38,7 @@ export const defaultInboxLabels: InboxLabels = {
   loadMore: "Load more",
   unreadCount: (count) =>
     count === 1 ? "1 unread notification" : `${count} unread notifications`,
+  badge: (count) => (count > 99 ? "99+" : String(count)),
   relativeTime: formatRelativeTime,
 };
 

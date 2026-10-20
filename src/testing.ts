@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
 import type { DeliveryContext, InboxChannel } from "./delivery";
 
+type ChannelFactory = () => InboxChannel | Promise<InboxChannel>;
+
 export type TestChannelOptions = {
   /**
    * The same channel wired to a transport that fails (a fake client that
    * rejects, a fetch that returns 500). Checks that `deliver` throws, which is
-   * what makes the delivery retry. Without it, that case is skipped.
+   * what makes the delivery retry.
    */
-  failing?: () => InboxChannel | Promise<InboxChannel>;
+  failing: ChannelFactory;
+  /**
+   * The channel wired to a transport that fails for good (an invalid address,
+   * a hard bounce), if it reports those. Checks that it throws a
+   * `PermanentDeliveryError` or an error with `permanent: true`.
+   */
+  permanentlyFailing?: ChannelFactory;
 };
 
 /** A delivery context with every optional field set. Pass overrides to vary it. */
@@ -66,8 +74,8 @@ export function deliveryContext(
  * that succeeded but whose worker died, so the inbox promises at-least-once.
  */
 export function testChannel(
-  create: () => InboxChannel | Promise<InboxChannel>,
-  options: TestChannelOptions = {},
+  create: ChannelFactory,
+  options: TestChannelOptions,
 ) {
   describe("InboxChannel contract", () => {
     it("has a deliver function", async () => {
@@ -116,11 +124,18 @@ export function testChannel(
       expect(ctx).toEqual(before);
     });
 
-    it.skipIf(!options.failing)(
-      "throws when the send fails, so the delivery retries",
+    it("throws when the send fails, so the delivery retries", async () => {
+      const channel = await options.failing();
+      await expect(channel.deliver(deliveryContext())).rejects.toThrow();
+    });
+
+    it.skipIf(!options.permanentlyFailing)(
+      "marks a send that can never succeed as permanent",
       async () => {
-        const channel = await options.failing!();
-        await expect(channel.deliver(deliveryContext())).rejects.toThrow();
+        const channel = await options.permanentlyFailing!();
+        await expect(channel.deliver(deliveryContext())).rejects.toMatchObject(
+          { permanent: true },
+        );
       },
     );
   });

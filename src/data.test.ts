@@ -236,3 +236,114 @@ describe("exportNotificationsData", () => {
     ]);
   });
 });
+
+describe("edges", () => {
+  it("rejects an empty organizationId, a bad limit and a bad cursor", async () => {
+    const { auth } = await setup();
+    await expect(
+      exportNotificationsData(auth, { organizationId: "" }),
+    ).rejects.toThrow(/organizationId is empty/);
+    for (const limit of [0, -1, 1.5, 1001]) {
+      await expect(exportNotificationsData(auth, { limit })).rejects.toThrow(
+        /limit must be/,
+      );
+    }
+    await expect(
+      exportNotificationsData(auth, { cursor: "abc" }),
+    ).rejects.toThrow(/invalid cursor/);
+  });
+
+  it("deletes and exports past one page of ids", async () => {
+    const { auth, alice, rows } = await setup();
+    const { adapter } = await auth.$context;
+    for (let i = 0; i < 200; i++) {
+      const n = await adapter.create<any, { id: string }>({
+        model: "notification",
+        data: {
+          userId: alice.user.id,
+          organizationId: "bulk",
+          type: "bulk",
+          title: `n${i}`,
+          read: false,
+          createdAt: new Date(),
+        },
+      });
+      await adapter.create({
+        model: "notificationDelivery",
+        data: {
+          notificationId: n.id,
+          userId: alice.user.id,
+          type: "bulk",
+          channel: "email",
+          status: "pending",
+          scheduledFor: new Date(),
+          attempts: 0,
+          createdAt: new Date(),
+        },
+      });
+    }
+
+    const page = await exportNotificationsData(auth, {
+      organizationId: "bulk",
+      limit: 1000,
+    });
+    expect(page.notifications).toHaveLength(200);
+    expect(page.notifications.every((n) => n.deliveries.length === 1)).toBe(
+      true,
+    );
+
+    expect(await deleteOrganizationData(auth, "bulk")).toEqual({
+      notifications: 200,
+    });
+    const after = await rows();
+    expect(after.of("bulk")).toHaveLength(0);
+    expect(after.orphans).toEqual([]);
+  });
+
+  it("removes a deleted user's rows on an adapter without foreign keys", async () => {
+    const { auth, bob, rows } = await setup();
+    const context = await auth.$context;
+    await auth.api.unreadCount({ headers: bob.headers, query: {} });
+
+    await context.internalAdapter.deleteUser(bob.user.id);
+
+    const after = await rows();
+    expect(after.notifications.filter((n) => n.userId === bob.user.id)).toEqual(
+      [],
+    );
+    expect(after.deliveries.filter((d) => d.userId === bob.user.id)).toEqual([]);
+    expect(
+      await context.adapter.findMany({
+        model: "inboxPresence",
+        where: [{ field: "userId", value: bob.user.id }],
+      }),
+    ).toEqual([]);
+  });
+
+  it("keeps a leaver's notifications with organizationCleanup: false", async () => {
+    const auth = createTestAuthWithOrg({ organizationCleanup: false });
+    const alice = await signUpUser(auth, "alice@example.com");
+    const bob = await signUpUser(auth, "bob@example.com");
+    const org = await auth.api.createOrganization({
+      headers: alice.headers,
+      body: { name: "Acme", slug: "acme" },
+    });
+    await auth.api.addMember({
+      body: { userId: bob.user.id, organizationId: org!.id, role: "member" },
+    });
+    await auth.api.notify({
+      body: { organizationId: org!.id, type: "x", title: "x" },
+    });
+
+    await auth.api.leaveOrganization({
+      headers: bob.headers,
+      body: { organizationId: org!.id },
+    });
+
+    const list = await auth.api.listNotifications({
+      headers: bob.headers,
+      query: {},
+    });
+    expect(list.notifications).toHaveLength(1);
+  });
+});

@@ -1,7 +1,7 @@
 import { admin } from "better-auth/plugins";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeliveryContext, InboxChannel } from "./delivery";
-import { inbox, type InboxOptions } from "./index";
+import { inbox, type InboxOptions, PermanentDeliveryError } from "./index";
 import type { NotificationDelivery } from "./schema";
 import {
   createTestAuth,
@@ -407,6 +407,36 @@ describe("processDeliveries", () => {
       { status: "failed", attempts: 2, detail: "SES throttled" },
     ]);
     expect(deliver).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails a permanent error at once instead of retrying", async () => {
+    for (const error of [
+      new PermanentDeliveryError("address does not exist"),
+      Object.assign(new Error("hard bounce"), { permanent: true }),
+    ]) {
+      const auth = createTestAuth({
+        channels: {
+          email: {
+            deliver: async () => {
+              throw error;
+            },
+          },
+        },
+        routes: { "*": [{ channel: "email" }] },
+      });
+      const alice = await signUpUser(auth, "alice@example.com");
+      await auth.api.notify({
+        body: { userId: alice.user.id, type: "x", title: "Hi" },
+      });
+
+      expect(await auth.api.processDeliveries({})).toMatchObject({
+        failed: 1,
+        retrying: 0,
+      });
+      expect(await deliveries(auth)).toMatchObject([
+        { status: "failed", attempts: 1, detail: error.message },
+      ]);
+    }
   });
 
   it("reclaims a delivery whose worker died mid-send", async () => {

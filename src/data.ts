@@ -1,5 +1,6 @@
 import type { AuthContext, Where } from "better-auth";
 import { createAuthMiddleware, isAPIError } from "better-auth/api";
+import { findManyIn, IN_CHUNK } from "./adapter";
 import type { Notification, NotificationDelivery } from "./schema";
 
 /**
@@ -8,8 +9,7 @@ import type { Notification, NotificationDelivery } from "./schema";
  */
 export type AuthWithContext = { $context: Promise<object> };
 
-// rows per page for deletes and exports, so no query builds one huge `in`
-const PAGE = 500;
+const EXPORT_LIMIT_MAX = 1000;
 
 async function inboxContext(auth: AuthWithContext, caller: string) {
   const context = (await auth.$context) as AuthContext;
@@ -29,7 +29,7 @@ async function deleteNotifications(context: AuthContext, where: Where[]) {
     const page = await context.adapter.findMany<Pick<Notification, "id">>({
       model: "notification",
       where,
-      limit: PAGE,
+      limit: IN_CHUNK,
       select: ["id"],
     });
     if (page.length === 0) return deleted;
@@ -38,12 +38,37 @@ async function deleteNotifications(context: AuthContext, where: Where[]) {
       model: "notificationDelivery",
       where: [{ field: "notificationId", operator: "in", value: ids }],
     });
-    await context.adapter.deleteMany({
+    const removed = await context.adapter.deleteMany({
       model: "notification",
       where: [{ field: "id", operator: "in", value: ids }],
     });
-    deleted += ids.length;
+    // a delete that matched rows but removed none (row-level security, a
+    // trigger) would otherwise loop forever
+    if (removed === 0) {
+      throw new Error(
+        `[@byo-oss/notifications] found ${ids.length} notifications to delete but deleted none`,
+      );
+    }
+    deleted += removed;
   }
+}
+
+/**
+ * Removes everything held about a user. Foreign keys cascade this on SQL;
+ * adapters without them (memory, MongoDB) rely on this running after the
+ * user row is deleted.
+ */
+export async function deleteUserRows(context: AuthContext, userId: string) {
+  await deleteNotifications(context, [{ field: "userId", value: userId }]);
+  // deliveries carry userId too, so none can be left behind
+  await context.adapter.deleteMany({
+    model: "notificationDelivery",
+    where: [{ field: "userId", value: userId }],
+  });
+  await context.adapter.deleteMany({
+    model: "inboxPresence",
+    where: [{ field: "userId", value: userId }],
+  });
 }
 
 // what each organization endpoint returns says whose notifications to drop
@@ -65,7 +90,9 @@ const memberWhere = (member: any): Where[] | undefined =>
 
 /**
  * Cleans up after the organization plugin's delete, remove-member and leave
- * endpoints. Deletes made any other way need the exported functions.
+ * endpoints. Deletes made any other way need the exported functions, and so
+ * does a delete whose own organizationHooks threw: that error replaces the
+ * response this hook reads.
  */
 export const organizationCleanupHook = {
   matcher: (ctx: { path?: string }) => !!ctx.path && ctx.path in orgCleanup,
@@ -144,30 +171,11 @@ export type ExportNotificationsDataOptions = {
   /** `cursor` from the previous page. Omit for the first page. */
   cursor?: string | null;
   /**
-   * Notifications per page.
+   * Notifications per page, 1 to 1000.
    * @default 500
    */
   limit?: number;
 };
-
-// a notification has one delivery per routed channel, so the count isn't
-// known up front; page until a short page (findMany defaults to 100 rows)
-async function findAllDeliveries(context: AuthContext, notificationIds: string[]) {
-  const all: NotificationDelivery[] = [];
-  for (;;) {
-    const page = await context.adapter.findMany<NotificationDelivery>({
-      model: "notificationDelivery",
-      where: [
-        { field: "notificationId", operator: "in", value: notificationIds },
-      ],
-      limit: PAGE,
-      offset: all.length,
-      sortBy: { field: "id", direction: "asc" },
-    });
-    all.push(...page);
-    if (page.length < PAGE) return all;
-  }
-}
 
 const serialize = <T extends object>(row: T): Serialized<T> =>
   Object.fromEntries(
@@ -181,8 +189,9 @@ const serialize = <T extends object>(row: T): Serialized<T> =>
  * Exports every notification (or one organization's) with its deliveries and
  * the user's email, a page at a time, as plain JSON. Server-only; for moving
  * to another tool or keeping an archive. Pages run in id order, and the cursor
- * is opaque: writes during an export can shift rows between pages, so export
- * once writes stop.
+ * is opaque. A row deleted mid-export (a member leaving, say) shifts later
+ * rows back a page, so one can be skipped: export with writes stopped, or
+ * export twice and compare.
  * Presence (`inboxPresence`) isn't exported; it's a minute-level heartbeat.
  */
 export async function exportNotificationsData(
@@ -190,18 +199,23 @@ export async function exportNotificationsData(
   options: ExportNotificationsDataOptions = {},
 ): Promise<{ notifications: ExportedNotification[]; cursor: string | null }> {
   const context = await inboxContext(auth, "exportNotificationsData");
+  const fail = (message: string) =>
+    new Error(`[@byo-oss/notifications] exportNotificationsData: ${message}`);
   const limit = options.limit ?? 500;
+  if (!Number.isInteger(limit) || limit < 1 || limit > EXPORT_LIMIT_MAX) {
+    throw fail(`limit must be an integer from 1 to ${EXPORT_LIMIT_MAX}`);
+  }
   const where: Where[] = [];
-  if (options.organizationId) {
+  // an empty organizationId must not fall through to "every organization"
+  if (options.organizationId !== undefined) {
+    if (!options.organizationId) throw fail("organizationId is empty");
     where.push({ field: "organizationId", value: options.organizationId });
   }
   // an offset, not "id > last": adapters disagree on how strings sort (the
   // memory adapter sorts with localeCompare but compares with >)
   const offset = options.cursor ? Number.parseInt(options.cursor, 10) : 0;
   if (!Number.isInteger(offset) || offset < 0) {
-    throw new Error(
-      `[@byo-oss/notifications] exportNotificationsData got an invalid cursor: ${options.cursor}`,
-    );
+    throw fail(`invalid cursor: ${options.cursor}`);
   }
   const page = await context.adapter.findMany<Notification>({
     model: "notification",
@@ -213,18 +227,18 @@ export async function exportNotificationsData(
   const rows = page.slice(0, limit);
   if (rows.length === 0) return { notifications: [], cursor: null };
 
-  const userIds = [...new Set(rows.map((n) => n.userId))];
   const [users, deliveries] = await Promise.all([
-    context.adapter.findMany<{ id: string; email: string }>({
+    findManyIn<{ id: string; email: string }>(context, {
       model: "user",
-      where: [{ field: "id", operator: "in", value: userIds }],
+      field: "id",
+      values: rows.map((n) => n.userId),
       select: ["id", "email"],
-      limit: userIds.length,
     }),
-    findAllDeliveries(
-      context,
-      rows.map((n) => n.id),
-    ),
+    findManyIn<NotificationDelivery>(context, {
+      model: "notificationDelivery",
+      field: "notificationId",
+      values: rows.map((n) => n.id),
+    }),
   ]);
   const emails = new Map(users.map((user) => [user.id, user.email]));
 

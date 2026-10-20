@@ -1,6 +1,7 @@
 import type { AuthContext, Where } from "better-auth";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
+import { chunk } from "./adapter";
 import {
   hasChannels,
   processDueDeliveries,
@@ -245,14 +246,19 @@ export const markSeen = () =>
       use: [sessionMiddleware],
     },
     async (ctx) => {
-      const count = await ctx.context.adapter.updateMany({
-        model: "notification",
-        where: [
-          { field: "userId", value: ctx.context.session.user.id },
-          { field: "id", operator: "in", value: ctx.body.ids },
-        ],
-        update: { seenAt: new Date() },
-      });
+      const seenAt = new Date();
+      let count = 0;
+      // chunked: 100 ids plus the other parameters exceed D1's 100 per query
+      for (const ids of chunk(ctx.body.ids)) {
+        count += await ctx.context.adapter.updateMany({
+          model: "notification",
+          where: [
+            { field: "userId", value: ctx.context.session.user.id },
+            { field: "id", operator: "in", value: ids },
+          ],
+          update: { seenAt },
+        });
+      }
       return { count };
     },
   );

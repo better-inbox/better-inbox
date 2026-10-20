@@ -229,9 +229,25 @@ describe("InboxButton", () => {
     );
     const live = screen.getByText("2 unread notifications");
     expect(live.getAttribute("aria-live")).toBe("polite");
-    expect(
-      screen.getByRole("button", { name: "Notifications" }),
-    ).toBeTruthy();
+    const bell = screen.getByRole("button", { name: "Notifications" });
+    expect(bell.getAttribute("aria-describedby")).toBe(live.id);
+  });
+
+  it("returns focus to the bell when Escape closes the panel", async () => {
+    const client = makeMockClient();
+    render(<InboxButton client={client} labels={{ badge: (n) => `${n}!` }} />);
+    await waitFor(() => expect(screen.getByText("2!")).toBeTruthy());
+
+    const bell = screen.getByRole("button", { name: "Notifications" });
+    fireEvent.click(bell);
+    await waitFor(() =>
+      expect(screen.getByText("First notification")).toBeTruthy(),
+    );
+    screen.getByRole("button", { name: /mark all read/i }).focus();
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByText("First notification")).toBeNull();
+    expect(document.activeElement).toBe(bell);
   });
 
   it("switching to all refetches without the unread filter", async () => {

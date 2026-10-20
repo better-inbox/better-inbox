@@ -26,8 +26,7 @@
     },
     "./testing": {
       "types": "./dist/testing.d.ts",
-      "import": "./dist/testing.js",
-      "require": "./dist/testing.cjs"
+      "import": "./dist/testing.js"
     },
     "./react": {
       "types": "./dist/react/index.d.ts",
