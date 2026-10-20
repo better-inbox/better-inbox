@@ -1,6 +1,6 @@
 {
   "name": "better-inbox",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "In-app notifications for better-auth apps. One plugin, one migration, one component — notifications live in your database, addressed to your users.",
   "license": "MIT",
   "author": "Jarod Stewart",
@@ -19,6 +19,11 @@
       "import": "./dist/client.js",
       "require": "./dist/client.cjs"
     },
+    "./wraps": {
+      "types": "./dist/wraps.d.ts",
+      "import": "./dist/wraps.js",
+      "require": "./dist/wraps.cjs"
+    },
     "./react": {
       "types": "./dist/react/index.d.ts",
       "import": "./dist/react/index.js",
@@ -27,7 +32,7 @@
   },
   "files": ["dist", "README.md", "llms.txt"],
   "scripts": {
-    "build": "rm -rf dist && tsup && node -e \"['index.d.ts','client.d.ts','react/index.d.ts','react/index.js','index.js','client.js'].forEach(f => require('fs').accessSync('dist/' + f))\"",
+    "build": "rm -rf dist && tsup && node -e \"['index.d.ts','client.d.ts','wraps.d.ts','react/index.d.ts','react/index.js','index.js','client.js','wraps.js'].forEach(f => require('fs').accessSync('dist/' + f))\"",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -38,10 +43,14 @@
   },
   "homepage": "https://better-inbox.dev",
   "peerDependencies": {
+    "@wraps.dev/email": ">=0.15.0",
     "better-auth": "^1.6.23",
     "react": ">=18"
   },
   "peerDependenciesMeta": {
+    "@wraps.dev/email": {
+      "optional": true
+    },
     "react": {
       "optional": true
     }
@@ -55,6 +64,7 @@
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@wraps.dev/email": "^0.15.0",
     "happy-dom": "^20.10.6",
     "react-dom": "^19.2.7",
     "tsup": "^8.5.1",

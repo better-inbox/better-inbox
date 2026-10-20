@@ -20,19 +20,27 @@ function seededMemoryAdapter(options: BetterAuthOptions) {
   return memoryAdapter(memoryDB);
 }
 
-export function createTestAuth(opts: InboxOptions = {}) {
+export function createTestAuth(
+  opts: InboxOptions = {},
+  authOptions: Partial<BetterAuthOptions> = {},
+) {
   const plugins = [inbox(opts)];
   return betterAuth({
     ...baseOptions,
+    ...authOptions,
     plugins,
     database: seededMemoryAdapter({ ...baseOptions, plugins }),
   });
 }
 
-export function createTestAuthWithOrg(opts: InboxOptions = {}) {
+export function createTestAuthWithOrg(
+  opts: InboxOptions = {},
+  authOptions: Partial<BetterAuthOptions> = {},
+) {
   const plugins = [inbox(opts), organization()];
   return betterAuth({
     ...baseOptions,
+    ...authOptions,
     plugins,
     database: seededMemoryAdapter({ ...baseOptions, plugins }),
   });

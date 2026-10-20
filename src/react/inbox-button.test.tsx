@@ -113,6 +113,44 @@ describe("InboxButton", () => {
     expect(screen.queryAllByRole("tab")).toHaveLength(0);
   });
 
+  it("marks unread rows seen when the panel opens, not before, and only once", async () => {
+    const markSeen = vi.fn().mockResolvedValue({ data: { count: 1 }, error: null });
+    const base = makeMockClient([
+      {
+        id: "n1",
+        userId: "u1",
+        type: "test",
+        title: "Unseen",
+        read: false,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: "n2",
+        userId: "u1",
+        type: "test",
+        title: "Already read",
+        read: true,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    const client = { inbox: { ...base.inbox, markSeen } };
+    render(<InboxButton client={client} />);
+
+    // the hook loads the list on mount, but nobody has looked at it yet
+    await waitFor(() => expect(base.inbox.list).toHaveBeenCalled());
+    expect(markSeen).not.toHaveBeenCalled();
+
+    const bell = screen.getByRole("button", { name: /notifications/i });
+    fireEvent.click(bell);
+    await waitFor(() => expect(screen.getByText("Unseen")).toBeTruthy());
+    await waitFor(() => expect(markSeen).toHaveBeenCalledWith({ ids: ["n1"] }));
+
+    fireEvent.click(bell);
+    fireEvent.click(bell);
+    await waitFor(() => expect(screen.getByText("Unseen")).toBeTruthy());
+    expect(markSeen).toHaveBeenCalledTimes(1);
+  });
+
   it("opens on the unread tab, first, and fetches unread rows", async () => {
     const client = makeMockClient();
     render(<InboxButton client={client} />);

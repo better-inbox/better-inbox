@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { InboxNotification, useInbox } from "./use-inbox";
 
 export function formatRelativeTime(value: Date | string): string {
@@ -46,6 +46,16 @@ export function InboxPanel({
     !controlled && showTabs && tab === "unread"
       ? inbox.notifications.filter((n) => !n.read)
       : inbox.notifications;
+
+  // the panel is on screen, so its unread rows count as seen
+  const unseenIds = visible
+    .filter((n) => !n.read && !n.seenAt)
+    .map((n) => n.id)
+    .join(",");
+  const { markSeen } = inbox;
+  useEffect(() => {
+    if (unseenIds) void markSeen(unseenIds.split(","));
+  }, [unseenIds, markSeen]);
 
   return (
     <div

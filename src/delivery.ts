@@ -1,0 +1,367 @@
+import type { AuthContext, User } from "better-auth";
+import type {
+  InboxPresence,
+  Notification,
+  NotificationDelivery,
+} from "./schema";
+
+export type Duration = {
+  seconds?: number;
+  minutes?: number;
+  hours?: number;
+};
+
+export type DeliveryContext = {
+  notification: Notification;
+  user: User;
+  /** `appUrl` from the inbox options, for turning a relative `href` into a link. */
+  appUrl: string | undefined;
+};
+
+export type InboxChannel = {
+  /** Sends one notification. Throw to have the delivery retried. */
+  deliver: (ctx: DeliveryContext) => Promise<void>;
+};
+
+export type DeliveryRule<Channel extends string = string> = {
+  channel: Channel;
+  /**
+   * Hold the delivery and send it only if the notification is still unread and
+   * unseen after this long. Omit to send right away.
+   */
+  ifUnreadAfter?: Duration;
+  /**
+   * With `ifUnreadAfter`, send right away when the user isn't in the app (no
+   * inbox poll within `presenceWindow`). @default true
+   */
+  sendNowIfAway?: boolean;
+};
+
+export type ShouldDeliver = (ctx: {
+  notification: Notification;
+  user: User;
+  channel: string;
+}) => boolean | Promise<boolean>;
+
+export type ResolvedDeliveryOptions = {
+  appUrl: string | undefined;
+  channels: Record<string, InboxChannel>;
+  routes: Record<string, DeliveryRule[]>;
+  shouldDeliver: ShouldDeliver | undefined;
+  presenceWindow: number;
+  maxAttempts: number;
+  batchSize: number;
+  leaseMs: number;
+  immediateLimit: number;
+};
+
+const PRESENCE_WRITE_INTERVAL = 60_000;
+const BACKOFF_BASE = 60_000;
+const BACKOFF_MAX = 60 * 60_000;
+
+export const durationMs = (d: Duration) =>
+  ((d.hours ?? 0) * 3600 + (d.minutes ?? 0) * 60 + (d.seconds ?? 0)) * 1000;
+
+export const hasChannels = (options: ResolvedDeliveryOptions) =>
+  Object.keys(options.channels).length > 0;
+
+const rulesFor = (options: ResolvedDeliveryOptions, type: string) =>
+  options.routes[type] ?? options.routes["*"] ?? [];
+
+/**
+ * Records that the user is in the app. Called from the endpoints the inbox
+ * polls; writes at most once a minute per user.
+ */
+export async function touchPresence(
+  context: AuthContext,
+  userId: string,
+  now = new Date(),
+) {
+  const existing = await context.adapter.findOne<InboxPresence>({
+    model: "inboxPresence",
+    where: [{ field: "userId", value: userId }],
+  });
+  if (!existing) {
+    await context.adapter.create({
+      model: "inboxPresence",
+      data: { userId, lastSeenAt: now },
+    });
+    return;
+  }
+  if (
+    now.getTime() - new Date(existing.lastSeenAt).getTime() >=
+    PRESENCE_WRITE_INTERVAL
+  ) {
+    await context.adapter.update({
+      model: "inboxPresence",
+      where: [{ field: "id", value: existing.id }],
+      update: { lastSeenAt: now },
+    });
+  }
+}
+
+async function presentUserIds(
+  context: AuthContext,
+  userIds: string[],
+  options: ResolvedDeliveryOptions,
+  now: Date,
+) {
+  if (userIds.length === 0) return new Set<string>();
+  const rows = await context.adapter.findMany<InboxPresence>({
+    model: "inboxPresence",
+    where: [
+      { field: "userId", operator: "in", value: userIds },
+      {
+        field: "lastSeenAt",
+        operator: "gte",
+        value: new Date(now.getTime() - options.presenceWindow),
+      },
+    ],
+  });
+  return new Set(rows.map((row) => row.userId));
+}
+
+/**
+ * Writes the delivery rows for freshly created notifications. Rows due now are
+ * attempted in the background when better-auth has a background task handler
+ * and the batch is small; everything else waits for `processDeliveries`.
+ */
+export async function scheduleDeliveries(
+  context: AuthContext,
+  notifications: Notification[],
+  options: ResolvedDeliveryOptions,
+) {
+  const first = notifications[0];
+  if (!first || !hasChannels(options)) return;
+  // one notify call shares a type, so one rule set covers every row
+  const rules = rulesFor(options, first.type);
+  if (rules.length === 0) return;
+
+  const now = new Date();
+  const present = rules.some(
+    (rule) => rule.ifUnreadAfter && rule.sendNowIfAway !== false,
+  )
+    ? await presentUserIds(
+        context,
+        [...new Set(notifications.map((n) => n.userId))],
+        options,
+        now,
+      )
+    : new Set<string>();
+
+  const dueNow: NotificationDelivery[] = [];
+  for (const notification of notifications) {
+    for (const rule of rules) {
+      const away = !present.has(notification.userId);
+      const sendNow =
+        !rule.ifUnreadAfter || (rule.sendNowIfAway !== false && away);
+      const scheduledFor = sendNow
+        ? now
+        : new Date(now.getTime() + durationMs(rule.ifUnreadAfter!));
+      const delivery = await context.adapter.create<
+        Omit<NotificationDelivery, "id">,
+        NotificationDelivery
+      >({
+        model: "notificationDelivery",
+        data: {
+          notificationId: notification.id,
+          userId: notification.userId,
+          channel: rule.channel,
+          status: "pending",
+          scheduledFor,
+          attempts: 0,
+          createdAt: now,
+        },
+      });
+      if (sendNow) dueNow.push(delivery);
+    }
+  }
+
+  // without a handler runInBackgroundOrAwait awaits, which would hold notify
+  // open for every send; the sweep picks these up instead
+  if (
+    dueNow.length > 0 &&
+    dueNow.length <= options.immediateLimit &&
+    context.options.advanced?.backgroundTasks?.handler
+  ) {
+    await context.runInBackgroundOrAwait(
+      attemptDeliveries(context, dueNow, options),
+    );
+  }
+}
+
+export type SweepResult = {
+  sent: number;
+  skipped: number;
+  retrying: number;
+  failed: number;
+  /** More deliveries were due than the batch size; call again. */
+  hasMore: boolean;
+};
+
+/** One sweep: reclaim stale leases, then attempt a batch of due deliveries. */
+export async function processDueDeliveries(
+  context: AuthContext,
+  options: ResolvedDeliveryOptions,
+  limit = options.batchSize,
+): Promise<SweepResult> {
+  const now = new Date();
+  // A worker that died mid-send leaves its row in "sending". Release it first
+  // so the claim below can stay a plain AND guard on status.
+  await context.adapter.updateMany({
+    model: "notificationDelivery",
+    where: [
+      { field: "status", value: "sending" },
+      {
+        field: "claimedAt",
+        operator: "lt",
+        value: new Date(now.getTime() - options.leaseMs),
+      },
+    ],
+    update: { status: "pending" },
+  });
+
+  const due = await context.adapter.findMany<NotificationDelivery>({
+    model: "notificationDelivery",
+    where: [
+      { field: "status", value: "pending" },
+      { field: "scheduledFor", operator: "lte", value: now },
+    ],
+    sortBy: { field: "scheduledFor", direction: "asc" },
+    limit: limit + 1,
+  });
+  const result = await attemptDeliveries(context, due.slice(0, limit), options);
+  return { ...result, hasMore: due.length > limit };
+}
+
+const CONCURRENCY = 10;
+
+async function attemptDeliveries(
+  context: AuthContext,
+  deliveries: NotificationDelivery[],
+  options: ResolvedDeliveryOptions,
+) {
+  const result = { sent: 0, skipped: 0, retrying: 0, failed: 0 };
+  if (deliveries.length === 0) return result;
+
+  const [notifications, users] = await Promise.all([
+    context.adapter.findMany<Notification>({
+      model: "notification",
+      where: [
+        {
+          field: "id",
+          operator: "in",
+          value: [...new Set(deliveries.map((d) => d.notificationId))],
+        },
+      ],
+    }),
+    context.adapter.findMany<User>({
+      model: "user",
+      where: [
+        {
+          field: "id",
+          operator: "in",
+          value: [...new Set(deliveries.map((d) => d.userId))],
+        },
+      ],
+    }),
+  ]);
+  const notificationsById = new Map(notifications.map((n) => [n.id, n]));
+  const usersById = new Map(users.map((u) => [u.id, u]));
+
+  for (let i = 0; i < deliveries.length; i += CONCURRENCY) {
+    const outcomes = await Promise.all(
+      deliveries
+        .slice(i, i + CONCURRENCY)
+        .map((delivery) =>
+          attemptDelivery(
+            context,
+            delivery,
+            notificationsById.get(delivery.notificationId),
+            usersById.get(delivery.userId),
+            options,
+          ),
+        ),
+    );
+    for (const outcome of outcomes) {
+      if (outcome) result[outcome]++;
+    }
+  }
+  return result;
+}
+
+async function attemptDelivery(
+  context: AuthContext,
+  delivery: NotificationDelivery,
+  notification: Notification | undefined,
+  user: User | undefined,
+  options: ResolvedDeliveryOptions,
+): Promise<"sent" | "skipped" | "retrying" | "failed" | null> {
+  const now = new Date();
+  // The immediate path and a sweep can both hold this row. incrementOne is the
+  // adapter's compare-and-swap: exactly one caller gets it back.
+  const claimed = await context.adapter.incrementOne<NotificationDelivery>({
+    model: "notificationDelivery",
+    where: [
+      { field: "id", value: delivery.id },
+      { field: "status", value: "pending" },
+      { field: "scheduledFor", operator: "lte", value: now },
+    ],
+    increment: { attempts: 1 },
+    set: { status: "sending", claimedAt: now },
+  });
+  if (!claimed) return null;
+
+  const finish = (update: Partial<NotificationDelivery>) =>
+    context.adapter.update({
+      model: "notificationDelivery",
+      where: [{ field: "id", value: delivery.id }],
+      update,
+    });
+  const skip = async (detail: string) => {
+    await finish({ status: "skipped", detail });
+    return "skipped" as const;
+  };
+
+  const channel = options.channels[delivery.channel];
+  if (!channel) return skip("unknown channel");
+  if (!notification) return skip("notification deleted");
+  if (notification.read) return skip("read");
+  if (notification.seenAt) return skip("seen");
+  if (!user) return skip("user deleted");
+  if (
+    options.shouldDeliver &&
+    !(await options.shouldDeliver({
+      notification,
+      user,
+      channel: delivery.channel,
+    }))
+  ) {
+    return skip("opted out");
+  }
+
+  try {
+    await channel.deliver({ notification, user, appUrl: options.appUrl });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    context.logger.error(
+      `[better-inbox] ${delivery.channel} delivery ${delivery.id} failed: ${detail}`,
+    );
+    if (claimed.attempts >= options.maxAttempts) {
+      await finish({ status: "failed", detail });
+      return "failed";
+    }
+    const backoff = Math.min(
+      BACKOFF_BASE * 2 ** (claimed.attempts - 1),
+      BACKOFF_MAX,
+    );
+    await finish({
+      status: "pending",
+      scheduledFor: new Date(Date.now() + backoff),
+      detail,
+    });
+    return "retrying";
+  }
+  await finish({ status: "sent", sentAt: new Date(), detail: null });
+  return "sent";
+}
