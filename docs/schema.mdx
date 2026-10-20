@@ -1,0 +1,64 @@
+---
+title: Schema
+description: The three tables the plugin creates, their fields and types, and the rules for changing them.
+group: reference
+order: 3
+---
+
+The plugin creates three tables. These tables are a public contract: a change that breaks reading existing rows is a major release. Rename tables or fields with the `schema` option. Nothing is added to better-auth's own tables.
+
+## notification
+
+One row per person per notification.
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `id` | string | Primary key |
+| `userId` | string → `user.id`, cascade | Whose inbox it's in |
+| `organizationId` | string, optional | The org it was sent in. No foreign key, because the organization plugin is optional |
+| `type` | string | Your event name, e.g. `billing.payment_failed`. Picks the delivery routes |
+| `title` | string | The headline in the inbox and the email subject |
+| `body` | string, optional | A line of detail under the title |
+| `href` | string, optional | Where clicking it goes. Emails join a relative path onto `appUrl` |
+| `data` | json, optional | Anything else you passed to `notify` |
+| `read` | boolean | Clicked or marked read |
+| `seenAt` | date, optional | When it was first on screen. Cancels pending "if unread" emails |
+| `createdAt` | date | When `notify` wrote it |
+
+## notificationDelivery
+
+One row per notification per routed channel.
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `id` | string | Primary key |
+| `notificationId` | string → `notification.id`, cascade | The notification it delivers |
+| `userId` | string → `user.id`, cascade | The recipient, copied from the notification |
+| `type` | string | The notification's type, for throttling |
+| `channel` | string | The channel's name in `channels` |
+| `status` | string | `pending`, `sending`, `sent`, `skipped` or `failed` |
+| `scheduledFor` | date | When it's due |
+| `attempts` | number | Sends tried |
+| `claimedAt` | date, optional | When a sweep claimed it. A claim older than five minutes is retried |
+| `sentAt` | date, optional | When the channel accepted it |
+| `detail` | string, optional | Why it was skipped, or the last error |
+| `createdAt` | date | When it was scheduled |
+
+## inboxPresence
+
+When each user last polled the inbox, so "email if unread" knows who's in the app.
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `id` | string | Primary key |
+| `userId` | string → `user.id`, cascade, unique | Whose heartbeat it is |
+| `lastSeenAt` | date | Written at most once a minute |
+
+## Deleting users
+
+Deleting a user removes their rows. On SQL databases this happens through the foreign keys.
+
+Every reference declares `onDelete: "cascade"`: `notification.userId`, `notificationDelivery.notificationId`, `notificationDelivery.userId` and `inboxPresence.userId`.
+
+On adapters without foreign keys (memory, MongoDB), the plugin removes the rows through a user-delete hook.
+

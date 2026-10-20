@@ -1,0 +1,14 @@
+---
+title: Uninstall
+description: How to remove the plugin, its Tailwind line and its cron, and drop the three tables it created.
+group: operations
+order: 3
+---
+
+Removing the plugin takes three steps: take out the code, take out the build and cron wiring, then drop the tables.
+
+1. Remove `inbox()` from `betterAuth({ plugins })`, `inboxClient()` from your auth client, and `InboxButton` / `useInbox` from your UI.
+2. Remove the Tailwind `@source` line and the cron that calls `processDeliveries`.
+3. Drop the tables, the one with foreign keys to `notification` first: `notificationDelivery`, then `inboxPresence` and `notification`. Use the names your adapter or the `schema` option gave them.
+
+The plugin adds no columns to better-auth's own tables (`user`, `organization`, `member`), so there's nothing else to clean up.

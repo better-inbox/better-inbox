@@ -1,0 +1,32 @@
+---
+title: Outgrowing this
+description: When this plugin stops being the right fit, which hosted tools to look at, and how to move without losing your history.
+group: operations
+order: 2
+---
+
+You've outgrown this plugin when you need push, SMS or chat next to in-app, a preference center and digests across channels, non-engineers editing notification templates, or realtime delivery to thousands of concurrent users. The usual next stops are [Knock](https://knock.app), [Novu](https://novu.co) and [Courier](https://www.courier.com).
+
+Neither Knock nor Novu documents a way to import past notifications. Their messages come from triggering a workflow, stamped with the current time and unread. So moving is a forward cutover, and your `notification` table stays the archive.
+
+## Mapping your data
+
+| Here | Knock | Novu |
+|------|-------|------|
+| `user.id`, `user.email` | user `id`, `email` ([bulk identify](https://docs.knock.app/api-reference/users/bulk/identify), 1,000 per call) | subscriber `subscriberId`, `email` ([bulk create](https://docs.novu.co/platform/concepts/subscribers), 500 per call) |
+| `organizationId` | [tenant](https://docs.knock.app/concepts/tenants) `id`, passed on each trigger | [tenant context](https://docs.novu.co/platform/concepts/tenants) `{ type: "tenant", id }` |
+| `type` | [workflow](https://docs.knock.app/concepts/workflows) key | [`workflowId`](https://docs.novu.co/platform/concepts/workflows), conventionally lowercase with hyphens, so `billing.payment_failed` may need renaming |
+| `title`, `body`, `href`, `data` | trigger `data`, rendered by the workflow's in-app template | trigger `payload` |
+| `read`, `seenAt` | [message statuses](https://docs.knock.app/send-notifications/message-statuses), for messages it created | read and seen, for messages it created |
+| `createdAt` | not settable | not settable |
+| `notificationDelivery`, `inboxPresence` | no equivalent; stays here | no equivalent; stays here |
+
+Knock is the more direct fit. Its tenants take `organizationId` as-is, and it documents setting message status through its API. Novu's [in-house migration guide](https://docs.novu.co/guides/migrate-from-in-house-to-novu) covers moving triggers one workflow at a time.
+
+## Moving over
+
+1. **Run both.** Keep calling `auth.api.notify`, and also trigger the new tool's workflow for one `type`, behind a flag.
+2. **Backfill people.** Bulk-import users from better-auth's `user` table, and organizations as tenants from `organization`.
+3. **Cut over one `type` at a time.** Check it in the tool's activity log, then stop calling `notify` for that type and point the bell at the tool's feed component.
+4. **Keep history readable.** Leave the old inbox reachable, as an "Earlier" tab or as an export into your own archive. For the export, use `exportNotificationsData`. Keep it for as long as people need it.
+5. **Uninstall** once nothing calls `notify` and nothing reads the old inbox. See [Uninstall](/docs/notifications/uninstall).

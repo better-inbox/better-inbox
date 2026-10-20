@@ -1,0 +1,33 @@
+---
+title: Introduction
+description: In-app notifications for better-auth apps, stored in your own database and addressed to your users.
+group: get started
+order: 1
+---
+
+`@byo-oss/notifications` adds in-app notifications to a [better-auth](https://better-auth.com) app. It is a better-auth plugin: one migration, one React component, and the notifications live in your own database, addressed to your better-auth users.
+
+![Stripe webhook fires, the bell rings, and the inbox panel opens with the payment-failed notification](https://raw.githubusercontent.com/byo-oss/notifications/main/.github/demo.gif)
+
+> Community plugin — not affiliated with the better-auth team.
+
+Formerly `better-inbox`. The API is the same, so change your imports. See [Upgrading](/docs/notifications/upgrading).
+
+## What you get
+
+- **A better-auth plugin, not a platform.** No services to deploy, no dashboard SaaS. The `notification` table lives in your own database via better-auth's adapter (drizzle, prisma, kysely, whatever you already use).
+- **Addressed to users, not email addresses.** `notify({ userId })` uses your better-auth user ids. Delete a user and their notifications go with them.
+- **Organization-aware.** Notify a whole org, optionally filtered by role, through the better-auth organization plugin: `notify({ organizationId, roles: ["owner", "admin"] })`. See [Notify an organization](/docs/notifications/organizations).
+- **Email when it matters.** Route a notification type to email and it goes out only if the notification is still unread after a delay, or right away if the user isn't in the app. [Wraps](https://wraps.dev) sends it through your own AWS SES account. See [Email if unread](/docs/notifications/email).
+- **One React component.** `<InboxButton />` gives you the bell, unread badge, and inbox panel, styled with shadcn CSS variables. It works with any shadcn theme, has zero runtime dependencies, and doesn't require shadcn. See [React components](/docs/notifications/react).
+
+## Not included (yet)
+
+Notifications are in-app first. Email follows a notification that went unread, and it uses the inbox's own read state to decide. Notification preferences, push, SMS, digests and realtime websockets aren't here yet. Polling, plus a refetch when the tab becomes visible, covers the badge.
+
+If you need full multi-channel delivery pipelines today, look at [Novu](https://novu.co) or [betternotify](https://github.com/better-notify/better-notify). For when to move, see [Outgrowing this](/docs/notifications/outgrowing).
+
+## Where to go next
+
+- [Quickstart](/docs/notifications/quickstart) adds the plugin, the bell and a first notification.
+- [Options](/docs/notifications/options) and [Schema](/docs/notifications/schema) list the settings and tables.

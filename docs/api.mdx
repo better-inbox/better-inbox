@@ -1,0 +1,78 @@
+---
+title: Server API
+description: Every endpoint and server-only function the plugin adds, with its input and what it returns.
+group: reference
+order: 1
+---
+
+The plugin adds endpoints to `auth.api`. Each one is one of two kinds: server-only, or own rows.
+
+- **Server-only** endpoints are callable through `auth.api` from your server code. They are never exposed as an HTTP route.
+- **Own rows** endpoints need a session. They only ever see or change the caller's own notifications.
+
+## Server-only endpoints
+
+### `auth.api.notify`
+
+Creates notifications. Pass `userId`, `organizationId`, or both.
+
+- `type` and `title` are required.
+- `userId` creates one row for that user.
+- `organizationId` alone fans out one row per member. Fan-out also takes `roles` and `excludeUserIds`.
+- `userId` with `organizationId` creates one row for that member, stamped with the org. The user must be a member.
+- `body`, `href` and `data` (JSON) are optional.
+
+Returns `{ count, notifications }`.
+
+See [Notify an organization](/docs/notifications/organizations) for the fan-out rules.
+
+### `auth.api.processDeliveries`
+
+Sends due email deliveries. Call it from a cron. The optional body is `{ limit }`, which overrides `batchSize`.
+
+Returns `{ sent, skipped, retrying, failed, hasMore }`.
+
+See [Email if unread](/docs/notifications/email#run-the-sweep-on-a-schedule).
+
+## Own-row endpoints
+
+### `auth.api.listNotifications`
+
+Query: `filter` (`"unread"` or `"all"`), `limit` (up to 100), `offset`, and `organizationId`.
+
+Returns `{ notifications, hasMore }`.
+
+### `auth.api.markRead`
+
+Body: `{ id }`. Marks one of the caller's notifications read.
+
+Returns `{ notification }`.
+
+### `auth.api.markSeen`
+
+Body: `{ ids }`, up to 100 ids. Stamps `seenAt` on the caller's notifications, which cancels pending emails. The panel calls it for rows that have been on screen.
+
+Returns `{ count }`.
+
+### `auth.api.markAllRead`
+
+Body: an optional `{ organizationId }`, which scopes the update to one org.
+
+Returns `{ count }`.
+
+### `auth.api.unreadCount`
+
+Query: an optional `organizationId`.
+
+Returns `{ count }`.
+
+## Server-only functions
+
+These are functions, not endpoints. Use them in your own scripts and hooks.
+
+| Function | Description |
+|----------|-------------|
+| `deleteOrganizationData(auth, organizationId)` | Deletes an org's notifications and their deliveries. Returns `{ notifications }`, the count |
+| `deleteMemberData(auth, { userId, organizationId })` | Deletes one member's notifications in one org. Returns `{ notifications }` |
+| `exportNotificationsData(auth, { organizationId?, cursor?, limit? })` | One page (500 by default) of notifications, each with its `deliveries` and the user's `userEmail`, as plain JSON with ISO dates. Returns `{ notifications, cursor }`. Pass `cursor` back until it's `null`. A row deleted mid-export (a member leaving, say) can make the next page skip one, so export with writes stopped |
+

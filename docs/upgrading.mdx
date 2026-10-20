@@ -1,0 +1,41 @@
+---
+title: Upgrading
+description: What changed in each release of @byo-oss/notifications, from the better-inbox rename through the latest release.
+group: get started
+order: 3
+---
+
+Each section covers one change. Read the sections between your current version and the latest. The default docs describe the latest published release. Sections marked next describe main, which isn't published yet.
+
+## From better-inbox (0.7)
+
+The package was renamed from `better-inbox` to `@byo-oss/notifications` in 0.7. The API is the same. Change your imports:
+
+```ts title="lib/auth.ts"
+// before
+import { inbox } from "better-inbox";
+
+// after
+import { inbox } from "@byo-oss/notifications";
+```
+
+## 0.6
+
+0.6 adds a `seenAt` column to `notification` and two tables, `notificationDelivery` and `inboxPresence`. Re-run `migrate` (or `generate`) after upgrading, even if you don't use email.
+
+If you hand `useInbox` your own client object rather than `authClient`, add `markSeen` to it:
+
+```ts
+markSeen: ({ ids }) => authClient.inbox.markSeen({ ids })
+```
+
+`InboxFetchClient` now requires it. Without it nothing is marked seen, and every unread email goes out.
+
+## 0.8
+
+- Every reference now declares `onDelete: "cascade"`: `notification.userId`, `notificationDelivery.notificationId`, `notificationDelivery.userId` and `inboxPresence.userId`. better-auth's own `migrate` already cascaded. If you generate migrations with drizzle or prisma, regenerate and apply them so your foreign keys match.
+- The plugin now deletes notifications when an organization is deleted or a member is removed or leaves. See [Notify an organization](/docs/notifications/organizations#cleanup). If you wired your own cleanup for this, you can remove it.
+- The panel's tabs render "Unread" and "All" as text, instead of `unread` and `all` capitalized by CSS. Tests that match the tab text exactly need the capitalized form.
+- Deleting a user now also removes their rows on adapters without foreign keys (memory, MongoDB).
+- New, additive: `exportNotificationsData`, `PermanentDeliveryError`, `labels` (including `badge`), `organizationCleanup`, and `@byo-oss/notifications/testing`, which needs vitest (an optional peer).
+

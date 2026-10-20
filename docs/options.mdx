@@ -1,0 +1,41 @@
+---
+title: Options
+description: The options accepted by inbox(), and the fields of a delivery rule, with their types and defaults.
+group: reference
+order: 2
+---
+
+Pass these to `inbox(options)` in your better-auth config. Every option is optional.
+
+## inbox options
+
+| Option | Type | Default | Meaning |
+|--------|------|---------|---------|
+| `appUrl` | string | | Your app's origin. Channels join a relative `href` onto it |
+| `channels` | `Record<string, InboxChannel>` | `{}` | Delivery channels beyond the in-app inbox, by name |
+| `routes` | `Record<type, DeliveryRule[]>` | `{}` | Which channels each `type` goes to. `"*"` is the fallback; a type with no rule stays in-app |
+| `shouldDeliver` | `({ notification, user, channel }) => boolean \| Promise<boolean>` | | Return `false` to skip a delivery, e.g. from your own preferences |
+| `presenceWindow` | number (ms) | `120000` | How recently a user must have polled to count as in the app |
+| `maxAttempts` | number | `5` | Sends tried before a delivery is marked `failed` |
+| `batchSize` | number | `100` | Deliveries per `processDeliveries` call |
+| `maxFanout` | number | `1000` | Most members one organization `notify` may reach |
+| `organizationCleanup` | boolean | `true` | Delete notifications when an org is deleted or a member is removed or leaves |
+| `schema` | | | Rename tables and fields |
+
+`organizationCleanup: false` keeps an org's and a member's notifications when they're removed, for example for an audit trail. `deleteOrganizationData` and `deleteMemberData` still work when it's off. See [Notify an organization](/docs/notifications/organizations#cleanup).
+
+For the `schema` option, see [Schema](/docs/notifications/schema).
+
+## DeliveryRule
+
+Each `routes` entry is a list of these.
+
+| Field | Type | Default | Meaning |
+|-------|------|---------|---------|
+| `channel` | string | | A name from `channels` |
+| `ifUnreadAfter` | `{ seconds?, minutes?, hours? }` | | Send only if still unread and unseen after this long. Omit to send right away |
+| `sendNowIfAway` | boolean | `true` | With `ifUnreadAfter`, send at once when the user isn't in the app |
+| `cancelIfRead` | boolean | `true` | Skip the send when the notification was read or seen first |
+| `throttle` | `{ seconds?, minutes?, hours? }` | | At most one send of this type per user per window |
+
+For how these behave, see [Email if unread](/docs/notifications/email).
