@@ -18,8 +18,18 @@ export type DeliveryContext = {
   appUrl: string | undefined;
 };
 
+/**
+ * A delivery channel. Test one with `testChannel` from
+ * `@byo-oss/notifications/testing`.
+ */
 export type InboxChannel = {
-  /** Sends one notification. Throw to have the delivery retried. */
+  /**
+   * Sends one notification. Resolve once the provider accepted it; throw to
+   * have the delivery retried with backoff. There's no permanent-failure
+   * signal yet: every throw retries until `maxAttempts`, then the delivery is
+   * marked `failed` with the error in `detail`. Must not change `ctx`.
+   * Deliveries are at-least-once, so a send can repeat after a crash.
+   */
   deliver: (ctx: DeliveryContext) => Promise<void>;
 };
 

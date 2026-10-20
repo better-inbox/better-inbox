@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DeliveryContext } from "./delivery";
 import { createTestAuth, signUpUser } from "./test-utils";
+import { testChannel } from "./testing";
 import { notificationUrl, renderEmail, wrapsEmail } from "./wraps";
 
 function context(overrides: Partial<DeliveryContext["notification"]> = {}) {
@@ -27,6 +28,22 @@ function context(overrides: Partial<DeliveryContext["notification"]> = {}) {
     appUrl: "https://app.acme.test",
   } satisfies DeliveryContext;
 }
+
+testChannel(
+  () =>
+    wrapsEmail({ from: "notify@acme.test", client: { send: async () => ({}) } }),
+  {
+    failing: () =>
+      wrapsEmail({
+        from: "notify@acme.test",
+        client: {
+          send: async () => {
+            throw new Error("MessageRejected");
+          },
+        },
+      }),
+  },
+);
 
 describe("wrapsEmail", () => {
   it("sends the rendered notification to the user's address", async () => {

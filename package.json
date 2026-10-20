@@ -24,6 +24,11 @@
       "import": "./dist/wraps.js",
       "require": "./dist/wraps.cjs"
     },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js",
+      "require": "./dist/testing.cjs"
+    },
     "./react": {
       "types": "./dist/react/index.d.ts",
       "import": "./dist/react/index.js",
@@ -32,7 +37,7 @@
   },
   "files": ["dist", "README.md", "llms.txt"],
   "scripts": {
-    "build": "rm -rf dist && tsup && node -e \"['index.d.ts','client.d.ts','wraps.d.ts','react/index.d.ts','react/index.js','index.js','client.js','wraps.js'].forEach(f => require('fs').accessSync('dist/' + f))\"",
+    "build": "rm -rf dist && tsup && node -e \"['index.d.ts','client.d.ts','wraps.d.ts','testing.d.ts','react/index.d.ts','react/index.js','index.js','client.js','wraps.js','testing.js'].forEach(f => require('fs').accessSync('dist/' + f))\"",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -48,13 +53,17 @@
   "peerDependencies": {
     "@wraps.dev/email": ">=0.15.0",
     "better-auth": "^1.6.23",
-    "react": ">=18"
+    "react": ">=18",
+    "vitest": ">=3"
   },
   "peerDependenciesMeta": {
     "@wraps.dev/email": {
       "optional": true
     },
     "react": {
+      "optional": true
+    },
+    "vitest": {
       "optional": true
     }
   },
