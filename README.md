@@ -11,7 +11,7 @@ npm install @byo-oss/notifications
 ![Stripe webhook fires, the bell rings, and the inbox panel opens with the payment-failed notification](https://raw.githubusercontent.com/byo-oss/notifications/main/.github/demo.gif)
 
 - **A better-auth plugin, not a platform.** No services to deploy, no dashboard SaaS. The `notification` table lives in your own database via better-auth's adapter (drizzle, prisma, kysely — whatever you already use).
-- **Addressed to users, not email addresses.** `notify({ userId })` uses your better-auth user ids. Delete a user, their notifications cascade.
+- **Addressed to users, not email addresses.** `notify({ userId })` uses your better-auth user ids. Delete a user and their notifications go with them.
 - **Organization-aware.** Notify a whole org — optionally filtered by role — via the better-auth organization plugin: `notify({ organizationId, roles: ["owner", "admin"] })`.
 - **Email when it matters.** Route a notification type to email and it goes out only if the notification is still unread after a delay, or right away if the user isn't in the app. [Wraps](https://wraps.dev) sends it through your own AWS SES account.
 - **One React component.** `<InboxButton />` gives you the bell, unread badge, and inbox panel, styled with shadcn CSS variables (works with any shadcn theme, zero runtime dependencies, no shadcn required).
@@ -158,7 +158,9 @@ Fan-out is capped at 1,000 members by default (`inbox({ maxFanout })` to change)
 
 ### When a member leaves or an organization is deleted
 
-The plugin cleans up after the organization plugin's own endpoints: `/organization/delete` deletes the org's notifications, and `/organization/remove-member` and `/organization/leave` delete that member's notifications in that org. Their notifications elsewhere stay. Deliveries go with their notifications. Deleting a user cascades to all of their rows.
+The plugin cleans up after the organization plugin's own endpoints: `/organization/delete` deletes the org's notifications, and `/organization/remove-member` and `/organization/leave` delete that member's notifications in that org. Their notifications elsewhere stay. Deliveries go with their notifications. Pass `organizationCleanup: false` to keep them, e.g. for an audit trail.
+
+Deleting a user removes all of their rows: through foreign keys on SQL databases, and through a user-delete hook on adapters without them (memory, MongoDB).
 
 If you delete organizations or members some other way (a script, an admin tool, a direct database write), call the cleanup yourself:
 
@@ -169,7 +171,7 @@ await deleteOrganizationData(auth, organizationId);
 await deleteMemberData(auth, { userId, organizationId });
 ```
 
-`organizationId` has no foreign key, because the organization plugin is optional. These functions do what a cascade would.
+`organizationId` has no foreign key, because the organization plugin is optional. These functions do what a cascade would. Call them too if your own `organizationHooks` (`afterDeleteOrganization`, `afterRemoveMember`) throw: that error replaces the response the plugin reads, so its cleanup skips. A notification fanned out at the moment its org is deleted can also survive; running `deleteOrganizationData` again is safe.
 
 ## Email if unread
 
@@ -200,7 +202,7 @@ inbox({
 });
 ```
 
-`wrapsEmail` sends through [`@wraps.dev/email`](https://wraps.dev) from your own AWS SES account, resolving credentials from the environment. Pass `client: new WrapsEmail({ region, ... })` to configure it, and `render: ({ notification, user, appUrl }) => ({ subject, html, text })` to replace the default email (title, body and a View button). A channel is any `{ deliver({ notification, user, appUrl }) }` that throws on failure, so other providers are a few lines.
+`wrapsEmail` sends through [`@wraps.dev/email`](https://wraps.dev) from your own AWS SES account, resolving credentials from the environment. Pass `client: new WrapsEmail({ region, ... })` to configure it, and `render: ({ notification, user, appUrl }) => ({ subject, html, text })` to replace the default email (title, body and a View button). A channel is any `{ deliver({ notification, user, appUrl }) }` that throws on failure, so other providers are a few lines. A throw retries; throw `PermanentDeliveryError` (or any error with `permanent: true`) for a send that can never succeed, such as an invalid address, and the delivery fails at once.
 
 **Read and seen both cancel it.** Clicking a notification marks it read. An unread row in the open panel is marked *seen* (`seenAt`) once at least half of it has been on screen for a second while the tab is visible. Rows below the scroll, or a panel flicked open and shut, don't count. Seen doesn't touch the badge or `read`, but it does cancel a pending email. For alerts whose email is the record, such as security events, set `cancelIfRead: false` and it goes out regardless.
 
@@ -224,23 +226,50 @@ Emails that are due right away (an away user, a rule with no delay) are sent ins
 
 **Opting out.** There are no built-in preferences yet. `shouldDeliver: ({ notification, user, channel }) => boolean | Promise<boolean>` lets you check your own before each send.
 
-Every delivery is a row in the `notificationDelivery` table (`status`: `pending`, `sending`, `sent`, `skipped`, `failed`, with the reason or last error in `detail`), so you can query what went out.
+Every delivery is a row in `notificationDelivery` (see [Schema](#schema)), with its status and the reason it was skipped or the last error.
+
+## Options
+
+`inbox(options)`:
+
+| Option | Type | Default | Meaning |
+|--------|------|---------|---------|
+| `appUrl` | string | | Your app's origin. Channels join a relative `href` onto it |
+| `channels` | `Record<string, InboxChannel>` | `{}` | Delivery channels beyond the in-app inbox, by name |
+| `routes` | `Record<type, DeliveryRule[]>` | `{}` | Which channels each `type` goes to. `"*"` is the fallback; a type with no rule stays in-app |
+| `shouldDeliver` | `({ notification, user, channel }) => boolean \| Promise<boolean>` | | Return `false` to skip a delivery, e.g. from your own preferences |
+| `presenceWindow` | number (ms) | `120000` | How recently a user must have polled to count as in the app |
+| `maxAttempts` | number | `5` | Sends tried before a delivery is marked `failed` |
+| `batchSize` | number | `100` | Deliveries per `processDeliveries` call |
+| `maxFanout` | number | `1000` | Most members one organization `notify` may reach |
+| `organizationCleanup` | boolean | `true` | Delete notifications when an org is deleted or a member is removed or leaves |
+| `schema` | | | Rename tables and fields |
+
+A `DeliveryRule`:
+
+| Field | Type | Default | Meaning |
+|-------|------|---------|---------|
+| `channel` | string | | A name from `channels` |
+| `ifUnreadAfter` | `{ seconds?, minutes?, hours? }` | | Send only if still unread and unseen after this long. Omit to send right away |
+| `sendNowIfAway` | boolean | `true` | With `ifUnreadAfter`, send at once when the user isn't in the app |
+| `cancelIfRead` | boolean | `true` | Skip the send when the notification was read or seen first |
+| `throttle` | `{ seconds?, minutes?, hours? }` | | At most one send of this type per user per window |
 
 ## API
 
 ### Server (`@byo-oss/notifications`)
 
-| Endpoint | Access | Description |
-|----------|--------|-------------|
-| `auth.api.notify({ body })` | server-only | Create notification(s). `userId`, `organizationId`, or both (one member's row, stamped with the org; the user must be a member). Org fan-out takes optional `roles` and `excludeUserIds`; `body`, `href`, `data` (JSON) |
-| `auth.api.processDeliveries({ body? })` | server-only | Sends due email deliveries; call from a cron. Optional `{ limit }` overrides `batchSize` → `{ sent, skipped, retrying, failed, hasMore }` |
-| `auth.api.listNotifications({ query })` | session | `{ filter?: "unread"\|"all", limit? (≤100), offset?, organizationId? }` → `{ notifications, hasMore }` |
-| `auth.api.markRead({ body: { id } })` | session | Marks one of the caller's notifications read |
-| `auth.api.markSeen({ body: { ids } })` | session | Stamps `seenAt` on up to 100 of the caller's notifications, cancelling pending emails. The panel calls it for rows that have been on screen |
-| `auth.api.markAllRead({ body })` | session | Optional `{ organizationId }` scope |
-| `auth.api.unreadCount({ query })` | session | → `{ count }` |
+| Endpoint | Kind | Input | Returns |
+|----------|------|-------|---------|
+| `auth.api.notify` | server-only | `body`: `type`, `title`, and `userId`, `organizationId` or both (one member's row, stamped with the org; the user must be a member). Optional `body`, `href`, `data` (JSON). Org fan-out also takes `roles` and `excludeUserIds` | `{ count, notifications }` |
+| `auth.api.processDeliveries` | server-only | Optional `body: { limit }`, overriding `batchSize`. Call it from a cron | `{ sent, skipped, retrying, failed, hasMore }` |
+| `auth.api.listNotifications` | own rows | `query`: `filter?: "unread" \| "all"`, `limit?` (≤100), `offset?`, `organizationId?` | `{ notifications, hasMore }` |
+| `auth.api.markRead` | own rows | `body: { id }` | `{ notification }` |
+| `auth.api.markSeen` | own rows | `body: { ids }`, up to 100. Stamps `seenAt`, cancelling pending emails; the panel calls it for rows that have been on screen | `{ count }` |
+| `auth.api.markAllRead` | own rows | `body: { organizationId? }` | `{ count }` |
+| `auth.api.unreadCount` | own rows | `query: { organizationId? }` | `{ count }` |
 
-Every session endpoint is scoped to the caller — users can only ever see and mutate their own notifications.
+"Own rows" endpoints need a session and only ever see or change the caller's own notifications.
 
 Server-only functions (not endpoints), for your own scripts and hooks:
 
@@ -248,7 +277,7 @@ Server-only functions (not endpoints), for your own scripts and hooks:
 |----------|-------------|
 | `deleteOrganizationData(auth, organizationId)` | Deletes an org's notifications and their deliveries → `{ notifications }` (the count) |
 | `deleteMemberData(auth, { userId, organizationId })` | Deletes one member's notifications in one org → `{ notifications }` |
-| `exportNotificationsData(auth, { organizationId?, cursor?, limit? })` | One page (500 by default) of notifications, each with its `deliveries` and the user's `userEmail`, as plain JSON with ISO dates → `{ notifications, cursor }`. Pass `cursor` back until it's `null`. Export once writes stop: rows written mid-export can shift between pages |
+| `exportNotificationsData(auth, { organizationId?, cursor?, limit? })` | One page (500 by default) of notifications, each with its `deliveries` and the user's `userEmail`, as plain JSON with ISO dates → `{ notifications, cursor }`. Pass `cursor` back until it's `null`. A row deleted mid-export (a member leaving, say) can make the next page skip one, so export with writes stopped |
 
 ### React (`@byo-oss/notifications/react`)
 
@@ -264,7 +293,7 @@ Server-only functions (not endpoints), for your own scripts and hooks:
 
 ### Testing (`@byo-oss/notifications/testing`)
 
-Writing your own channel (push, SMS, Slack)? Run the `InboxChannel` contract against it with vitest:
+Writing your own channel (push, SMS, Slack)? Run the `InboxChannel` contract against it with vitest (ESM only, since vitest can't be `require()`d):
 
 ```ts
 import { testChannel } from "@byo-oss/notifications/testing";
@@ -274,7 +303,7 @@ testChannel(() => slackChannel({ fetch: fakeFetch }), {
 });
 ```
 
-It checks that `deliver` resolves for full and minimal notifications and for relative and absolute links, doesn't change its input, and throws when the send fails. Throwing is what makes a delivery retry, and every throw retries until `maxAttempts`. `deliveryContext(overrides)` builds a sample context for your own tests. The built-in Wraps channel runs the same suite.
+It checks that `deliver` resolves for full and minimal notifications and for relative and absolute links, doesn't change its input, and throws when the send fails, which is what makes a delivery retry. If your channel reports sends that can never succeed, pass `permanentlyFailing` too, and it checks that those throw a `PermanentDeliveryError`. `deliveryContext(overrides)` builds a sample context for your own tests. The built-in Wraps channel runs the same suite.
 
 ## Schema
 
@@ -284,41 +313,41 @@ These tables are a public contract: a change that breaks reading existing rows i
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| `id` | string | |
+| `id` | string | Primary key |
 | `userId` | string → `user.id`, cascade | Whose inbox it's in |
 | `organizationId` | string, optional | The org it was sent in. No foreign key, because the organization plugin is optional |
 | `type` | string | Your event name, e.g. `billing.payment_failed`. Picks the delivery routes |
-| `title` | string | |
-| `body` | string, optional | |
+| `title` | string | The headline in the inbox and the email subject |
+| `body` | string, optional | A line of detail under the title |
 | `href` | string, optional | Where clicking it goes. Emails join a relative path onto `appUrl` |
 | `data` | json, optional | Anything else you passed to `notify` |
 | `read` | boolean | Clicked or marked read |
 | `seenAt` | date, optional | When it was first on screen. Cancels pending "if unread" emails |
-| `createdAt` | date | |
+| `createdAt` | date | When `notify` wrote it |
 
 **`notificationDelivery`**: one row per notification per routed channel.
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| `id` | string | |
-| `notificationId` | string → `notification.id`, cascade | |
-| `userId` | string → `user.id`, cascade | |
+| `id` | string | Primary key |
+| `notificationId` | string → `notification.id`, cascade | The notification it delivers |
+| `userId` | string → `user.id`, cascade | The recipient, copied from the notification |
 | `type` | string | The notification's type, for throttling |
 | `channel` | string | The channel's name in `channels` |
 | `status` | string | `pending`, `sending`, `sent`, `skipped` or `failed` |
 | `scheduledFor` | date | When it's due |
 | `attempts` | number | Sends tried |
 | `claimedAt` | date, optional | When a sweep claimed it. A claim older than five minutes is retried |
-| `sentAt` | date, optional | |
+| `sentAt` | date, optional | When the channel accepted it |
 | `detail` | string, optional | Why it was skipped, or the last error |
-| `createdAt` | date | |
+| `createdAt` | date | When it was scheduled |
 
 **`inboxPresence`**: when each user last polled the inbox, so "email if unread" knows who's in the app.
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| `id` | string | |
-| `userId` | string → `user.id`, cascade, unique | |
+| `id` | string | Primary key |
+| `userId` | string → `user.id`, cascade, unique | Whose heartbeat it is |
 | `lastSeenAt` | date | Written at most once a minute |
 
 ## Performance note
@@ -337,11 +366,20 @@ index("notification_delivery_due_idx").on(table.status, table.scheduledFor)
 index("notification_delivery_throttle_idx").on(table.userId, table.type, table.channel, table.sentAt)
 ```
 
+Organization cleanup and export look notifications up by org and deliveries by notification. Postgres doesn't index foreign keys on its own:
+
+```ts
+index("notification_org_idx").on(table.organizationId)
+index("notification_delivery_notification_idx").on(table.notificationId)
+```
+
 ## Upgrading to 0.8
 
 - Every reference now declares `onDelete: "cascade"`: `notification.userId`, `notificationDelivery.notificationId`, `notificationDelivery.userId` and `inboxPresence.userId`. better-auth's own `migrate` already cascaded. If you generate migrations with drizzle or prisma, regenerate and apply them so your foreign keys match.
 - The plugin now deletes notifications when an organization is deleted or a member is removed or leaves (see [above](#when-a-member-leaves-or-an-organization-is-deleted)). If you wired your own cleanup for this, you can remove it.
 - The panel's tabs render "Unread" and "All" as text, instead of `unread` and `all` capitalized by CSS. Tests that match the tab text exactly need the capitalized form.
+- Deleting a user now also removes their rows on adapters without foreign keys (memory, MongoDB).
+- New, additive: `exportNotificationsData`, `PermanentDeliveryError`, `labels` (including `badge`), `organizationCleanup`, and `@byo-oss/notifications/testing`.
 
 ## Upgrading to 0.6
 
@@ -370,7 +408,7 @@ Neither Knock nor Novu documents a way to import past notifications: their messa
 | `notificationDelivery`, `inboxPresence` | no equivalent; stays here | no equivalent; stays here |
 
 1. **Run both.** Keep calling `auth.api.notify`, and also trigger the new tool's workflow for one `type`, behind a flag.
-2. **Backfill people.** Bulk-import users, and organizations as tenants. `exportNotificationsData` gives you each row's `userId`, `organizationId` and `userEmail` if you'd rather read them from here.
+2. **Backfill people.** Bulk-import users from better-auth's `user` table, and organizations as tenants from `organization`.
 3. **Cut over one `type` at a time.** Check it in the tool's activity log, then stop calling `notify` for that type and point the bell at the tool's feed component.
 4. **Keep history readable.** Leave the old inbox reachable (an "Earlier" tab, or an export into your own archive) for as long as people need it.
 5. **Uninstall** once nothing calls `notify` and nothing reads the old inbox.
