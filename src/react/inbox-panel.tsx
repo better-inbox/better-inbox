@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { InboxNotification, useInbox } from "./use-inbox";
+import { useSeenOnView } from "./use-seen-on-view";
 
 export function formatRelativeTime(value: Date | string): string {
   const date = typeof value === "string" ? new Date(value) : value;
@@ -47,15 +48,9 @@ export function InboxPanel({
       ? inbox.notifications.filter((n) => !n.read)
       : inbox.notifications;
 
-  // the panel is on screen, so its unread rows count as seen
-  const unseenIds = visible
-    .filter((n) => !n.read && !n.seenAt)
-    .map((n) => n.id)
-    .join(",");
-  const { markSeen } = inbox;
-  useEffect(() => {
-    if (unseenIds) void markSeen(unseenIds.split(","));
-  }, [unseenIds, markSeen]);
+  // an unread row counts as seen once it has actually been on screen, which
+  // cancels its pending "email if unread"; rows below the scroll don't count
+  const seenRef = useSeenOnView(inbox.markSeen);
 
   return (
     <div
@@ -101,7 +96,14 @@ export function InboxPanel({
         ) : (
           <ul className="divide-y divide-border">
             {visible.map((notification) => (
-              <li key={notification.id}>
+              <li
+                key={notification.id}
+                ref={
+                  notification.read || notification.seenAt
+                    ? undefined
+                    : seenRef(notification.id)
+                }
+              >
                 {renderItem ? (
                   renderItem(notification)
                 ) : (

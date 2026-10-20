@@ -38,14 +38,14 @@ inbox({
   // presenceWindow: 120000, maxAttempts: 5, batchSize: 100
 });
 await auth.api.processDeliveries({}); // REQUIRED from a cron (every minute): sends delayed emails and retries → { sent, skipped, retrying, failed, hasMore }
-// The email is skipped if the notification is read, or seen (seenAt, set when the panel shows it), unless cancelIfRead: false. throttle: at most one sent email per (user, type, channel) per window; extras skipped with detail "throttled" (best-effort across concurrent processes). Impersonated sessions (admin plugin) don't count as presence. Users with no unread-count poll within presenceWindow are "away": ifUnreadAfter emails go out right away (sendNowIfAway: false to always wait). Due-now emails send inside notify only with advanced.backgroundTasks.handler and <=25 rows; otherwise on the next sweep. At-least-once; atomic claim; backoff 1m doubling to 1h; rows in notificationDelivery (status pending|sending|sent|skipped|failed, detail).
+// The email is skipped if the notification is read, or seen (seenAt, set once a row is ≥50% on screen for 1s in a visible tab), unless cancelIfRead: false. throttle: at most one sent email per (user, type, channel) per window; extras skipped with detail "throttled" (best-effort across concurrent processes). Impersonated sessions (admin plugin) don't count as presence. Users with no unread-count poll within presenceWindow are "away": ifUnreadAfter emails go out right away (sendNowIfAway: false to always wait). Due-now emails send inside notify only with advanced.backgroundTasks.handler and <=25 rows; otherwise on the next sweep. At-least-once; atomic claim; backoff 1m doubling to 1h; rows in notificationDelivery (status pending|sending|sent|skipped|failed, detail).
 // A channel is { deliver({ notification, user, appUrl }) } that throws on failure.
 
 ## Read/mutate (session-scoped to caller)
 
 auth.api.listNotifications({ headers, query: { filter: "unread"|"all", limit: 20, offset: 0, organizationId } }) → { notifications, hasMore }
 auth.api.markRead({ headers, body: { id } })
-auth.api.markSeen({ headers, body: { ids } }) // ≤100; cancels pending emails; InboxPanel calls it on open
+auth.api.markSeen({ headers, body: { ids } }) // ≤100; cancels pending emails; InboxPanel calls it for rows actually on screen
 auth.api.markAllRead({ headers, body: { organizationId? } })
 auth.api.unreadCount({ headers, query: { organizationId? } }) → { count }
 // same methods on the client: authClient.inbox.list / markRead / markSeen / markAllRead / unreadCount
@@ -53,6 +53,7 @@ auth.api.unreadCount({ headers, query: { organizationId? } }) → { count }
 ## React hook
 
 const { notifications, unreadCount, isLoading, hasMore, loadMore, markRead, markSeen, markAllRead, refresh, refreshIfStale } = useInbox(authClient, { pollInterval: 30000, pageSize: 20, filter: "unread"|"all", organizationId, refreshOnFocus: true });
+const seenRef = useSeenOnView(markSeen, { delayMs: 1000, threshold: 0.5 }); // <li ref={n.read || n.seenAt ? undefined : seenRef(n.id)}>; IntersectionObserver, marks nothing without it
 // polling refetches unread count (paused while the tab is hidden); full refresh when the tab becomes visible (refreshOnFocus, skipped if data is <5s old) and always on panel open. refresh() always fetches; refreshIfStale() respects the 5s window; concurrent refreshes share one request. markRead/markAllRead are optimistic.
 // filter: "unread" fetches unread rows only, so pageSize is the count you actually get. Locally-read rows stay until refresh(); loadMore() offsets by unread rows held. Changing filter refetches. InboxButton takes the same filter prop and hides its all/unread tabs when set to "unread".
 // InboxButton opens on the "unread" tab (server-filtered), tabs ordered unread, all. InboxPanel accepts view/onViewChange; uncontrolled it defaults to "unread".

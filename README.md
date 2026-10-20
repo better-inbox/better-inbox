@@ -185,7 +185,7 @@ inbox({
 
 `wrapsEmail` sends through [`@wraps.dev/email`](https://wraps.dev) from your own AWS SES account, resolving credentials from the environment. Pass `client: new WrapsEmail({ region, ... })` to configure it, and `render: ({ notification, user, appUrl }) => ({ subject, html, text })` to replace the default email (title, body and a View button). A channel is any `{ deliver({ notification, user, appUrl }) }` that throws on failure, so other providers are a few lines.
 
-**Read and seen both cancel it.** Clicking a notification marks it read. Opening the panel marks the unread rows it shows as *seen* (`seenAt`), which doesn't touch the badge or `read` but does cancel a pending email. For alerts whose email is the record, such as security events, set `cancelIfRead: false` and it goes out regardless.
+**Read and seen both cancel it.** Clicking a notification marks it read. An unread row in the open panel is marked *seen* (`seenAt`) once at least half of it has been on screen for a second while the tab is visible. Rows below the scroll, or a panel flicked open and shut, don't count. Seen doesn't touch the badge or `read`, but it does cancel a pending email. For alerts whose email is the record, such as security events, set `cancelIfRead: false` and it goes out regardless.
 
 **Throttle alerts that repeat.** With `throttle: { hours: 1 }`, a user gets at most one email of that type per hour; later ones are skipped (with `detail: "throttled"`) and stay in the inbox. The window counts from the last email actually sent. It holds within one process; two sweeps running at once in separate processes can each send one.
 
@@ -219,7 +219,7 @@ Every delivery is a row in the `notificationDelivery` table (`status`: `pending`
 | `auth.api.processDeliveries({ body? })` | server-only | Sends due email deliveries; call from a cron. Optional `{ limit }` overrides `batchSize` → `{ sent, skipped, retrying, failed, hasMore }` |
 | `auth.api.listNotifications({ query })` | session | `{ filter?: "unread"\|"all", limit? (≤100), offset?, organizationId? }` → `{ notifications, hasMore }` |
 | `auth.api.markRead({ body: { id } })` | session | Marks one of the caller's notifications read |
-| `auth.api.markSeen({ body: { ids } })` | session | Stamps `seenAt` on up to 100 of the caller's notifications, cancelling pending emails. The panel calls it on open |
+| `auth.api.markSeen({ body: { ids } })` | session | Stamps `seenAt` on up to 100 of the caller's notifications, cancelling pending emails. The panel calls it for rows that have been on screen |
 | `auth.api.markAllRead({ body })` | session | Optional `{ organizationId }` scope |
 | `auth.api.unreadCount({ query })` | session | → `{ count }` |
 
@@ -228,7 +228,7 @@ Every session endpoint is scoped to the caller — users can only ever see and m
 ### React (`better-inbox/react`)
 
 - `<InboxButton client={authClient} />` — bell + badge + panel. Props: `onNavigate`, `renderItem`, `pollInterval` (default 30s; unread count only, paused while the tab is hidden), `refreshOnFocus` (default `true`; full refresh when the tab becomes visible), `filter`, `organizationId`, `className` (the wrapper), `buttonClassName` (replaces the trigger's default classes). The visibility refresh is skipped when the data is under 5s old; opening the panel always refreshes. Opens on an **Unread** tab (fetched server-side with `filter: "unread"`) with **All** second; passing `filter` locks the list and hides the tabs.
-- `useInbox(client, options)` — build your own UI: `{ notifications, unreadCount, isLoading, hasMore, loadMore, markRead, markSeen, markAllRead, refresh, refreshIfStale }`. In a custom UI, call `markSeen(ids)` for the rows you put on screen so they cancel pending emails. Options: `pollInterval`, `pageSize`, `filter`, `organizationId`, `refreshOnFocus`. `refresh()` always fetches (concurrent calls share one request); `refreshIfStale()` skips if the data is under 5s old.
+- `useInbox(client, options)` — build your own UI: `{ notifications, unreadCount, isLoading, hasMore, loadMore, markRead, markSeen, markAllRead, refresh, refreshIfStale }`. In a custom UI, use `const seenRef = useSeenOnView(markSeen)` and put `ref={seenRef(n.id)}` on each unread row, so only rows people actually look at cancel pending emails. It uses IntersectionObserver and marks nothing where that's missing. Options: `pollInterval`, `pageSize`, `filter`, `organizationId`, `refreshOnFocus`. `refresh()` always fetches (concurrent calls share one request); `refreshIfStale()` skips if the data is under 5s old.
 - `filter: "unread"` fetches only unread rows, so a page is a full page — `useInbox(authClient, { filter: "unread", pageSize: 5 })` yields five unread notifications instead of five rows you then filter down to however many are unread. Rows you mark read stay in the list until the next `refresh()`, and `loadMore()` accounts for them when paging.
 - `<InboxPanel inbox={useInbox(...)} />` — the panel without the bell. Pass `view` + `onViewChange` to control its tabs; uncontrolled it defaults to Unread.
 
