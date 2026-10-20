@@ -1,0 +1,36 @@
+---
+title: Performance
+description: The indexes to add to the plugin's tables once you have real traffic, with drizzle examples.
+group: operations
+order: 1
+---
+
+Add an index for the list query once you have real traffic. Plugin schemas can't declare indexes, so each one is a line you add yourself. The examples use drizzle.
+
+## The notification list
+
+Every inbox load filters by user and sorts by time:
+
+```ts
+index("notification_user_created_idx").on(table.userId, table.createdAt)
+```
+
+## The email sweep
+
+With email routes, the sweep queries `notificationDelivery` by status and due time:
+
+```ts
+index("notification_delivery_due_idx").on(table.status, table.scheduledFor)
+// only if you use throttle:
+index("notification_delivery_throttle_idx").on(table.userId, table.type, table.channel, table.sentAt)
+```
+
+## Organization cleanup and export
+
+Organization cleanup and export look notifications up by org and deliveries by notification. Postgres doesn't index foreign keys on its own:
+
+```ts
+index("notification_org_idx").on(table.organizationId)
+index("notification_delivery_notification_idx").on(table.notificationId)
+```
+

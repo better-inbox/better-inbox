@@ -1,0 +1,77 @@
+---
+title: Notify an organization
+description: Send a notification to every member of a better-auth organization, optionally filtered by role or with the actor excluded.
+group: guides
+order: 1
+---
+
+With the better-auth [organization plugin](https://better-auth.com/docs/plugins/organization) enabled, you can address an org instead of a user. One notification is created per member (fan-out on write), each stamped with `organizationId`.
+
+```ts title="app/api/webhooks/stripe.ts"
+// Stripe webhook: payment failed, so tell the org's admins
+await auth.api.notify({
+  body: {
+    organizationId: subscription.metadata.orgId,
+    roles: ["owner", "admin"], // optional: omit to notify every member
+    type: "billing.payment_failed",
+    title: "Payment failed — update your card",
+    href: "/settings/billing",
+  },
+});
+```
+
+## Leave out the actor
+
+To leave out the member who caused the event, pass `excludeUserIds`. If `roles` and `excludeUserIds` leave nobody, `notify` returns `{ count: 0, notifications: [] }`. An organization with no members at all still throws.
+
+```ts title="app/actions/comments.ts"
+// A comment in an org: tell every member except the author
+await auth.api.notify({
+  body: {
+    organizationId: post.orgId,
+    excludeUserIds: [session.user.id], // the actor gets no row
+    type: "comment.added",
+    title: `${session.user.name} commented`,
+    href: `/posts/${post.id}`,
+  },
+});
+```
+
+## Notify one member in an org
+
+Pass `userId` together with `organizationId` to notify one member in the org's context. It writes a single row stamped with `organizationId`, so it shows up under that org's `organizationId` filter. `notify` throws if the user is not a member.
+
+```ts title="app/actions/tasks.ts"
+await auth.api.notify({
+  body: {
+    userId: task.assigneeId,
+    organizationId: task.orgId,
+    type: "task.assigned",
+    title: "Assigned to you",
+    href: `/tasks/${task.id}`,
+  },
+});
+```
+
+`roles` and `excludeUserIds` apply only to fan-out, so they are rejected when `userId` is set.
+
+## Fan-out limit
+
+Fan-out is capped at 1,000 members by default. Change it with `inbox({ maxFanout })`. Over the cap, `notify` throws instead of hammering your database.
+
+## Cleanup
+
+The plugin cleans up after the organization plugin's own endpoints: `/organization/delete` deletes the org's notifications, and `/organization/remove-member` and `/organization/leave` delete that member's notifications in that org. Their notifications elsewhere stay. Deliveries go with their notifications. Pass `organizationCleanup: false` to keep them, for example for an audit trail.
+
+Deleting a user removes all of their rows: through foreign keys on SQL databases, and through a user-delete hook on adapters without them (memory, MongoDB).
+
+If you delete organizations or members some other way (a script, an admin tool, a direct database write), call the cleanup yourself:
+
+```ts title="scripts/remove-org.ts"
+import { deleteMemberData, deleteOrganizationData } from "@byo-oss/notifications";
+
+await deleteOrganizationData(auth, organizationId);
+await deleteMemberData(auth, { userId, organizationId });
+```
+
+`organizationId` has no foreign key, because the organization plugin is optional. These functions do what a cascade would. Call them too if your own `organizationHooks` (`afterDeleteOrganization`, `afterRemoveMember`) throw: that error replaces the response the plugin reads, so its cleanup skips. A notification fanned out at the moment its org is deleted can also survive. Running `deleteOrganizationData` again is safe.

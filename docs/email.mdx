@@ -1,0 +1,95 @@
+---
+title: Email if unread
+description: Route notification types to email, sent only if nobody reads or sees them in the app first, with throttling, a sweep you schedule, and opt-out hooks.
+group: guides
+order: 2
+---
+
+Route a notification type to email, and it is emailed only if nobody has read or seen it in the app first. The in-app row is always written. Email is a follow-up to it.
+
+## Install and configure
+
+```sh
+npm install @wraps.dev/email
+```
+
+```ts title="lib/auth.ts"
+import { inbox } from "@byo-oss/notifications";
+import { wrapsEmail } from "@byo-oss/notifications/wraps";
+
+inbox({
+  appUrl: "https://app.acme.com", // turns href "/settings/billing" into a link
+  channels: {
+    email: wrapsEmail({ from: "Acme <notify@acme.com>" }),
+  },
+  routes: {
+    // in-app now; email after 15 minutes if still unread, or right away if the user isn't in the app
+    "billing.payment_failed": [{ channel: "email", ifUnreadAfter: { minutes: 15 } }],
+    // in-app and email, both right away; the email goes out even if it's read first
+    "security.new_login": [{ channel: "email", cancelIfRead: false }],
+    // at most one email an hour per user, however often it fires
+    "run.failed": [{ channel: "email", ifUnreadAfter: { minutes: 15 }, throttle: { hours: 1 } }],
+    // "*": [...] would apply to every type without its own entry; types with no rule stay in-app
+  },
+});
+```
+
+## Routes
+
+`routes` maps each notification `type` to a list of delivery rules. Each rule names a channel from `channels`. A type with no rule stays in-app. Use `"*"` as a fallback for every type that has no entry of its own. Every field of a rule is listed on the [Options](/docs/notifications/options) page.
+
+## The email channel
+
+`wrapsEmail` sends through [`@wraps.dev/email`](https://wraps.dev) from your own AWS SES account, resolving credentials from the environment. Pass `client: new WrapsEmail({ region, ... })` to configure it. Pass `render: ({ notification, user, appUrl }) => ({ subject, html, text })` to replace the default email, which shows the title, the body and a View button.
+
+A channel is any object with a `deliver({ notification, user, appUrl })` method that throws on failure, so other providers are a few lines. See [Custom channels](/docs/notifications/channels).
+
+A throw retries. Throw `PermanentDeliveryError` (or any error with `permanent: true`) for a send that can never succeed, such as an invalid address, and the delivery fails at once.
+
+## Read and seen both cancel it
+
+Clicking a notification marks it read. An unread row in the open panel is marked *seen* (`seenAt`) once at least half of it has been on screen for a second while the tab is visible. Rows below the scroll, or a panel flicked open and shut, don't count.
+
+Seen doesn't touch the badge or `read`, but it does cancel a pending email. For alerts whose email is the record, such as security events, set `cancelIfRead: false` and it goes out regardless.
+
+## Throttle alerts that repeat
+
+With `throttle: { hours: 1 }`, a user gets at most one email of that type per hour. Later ones are skipped (with `detail: "throttled"`) and stay in the inbox. The window counts from the last email actually sent. It holds within one process. Two sweeps running at once in separate processes can each send one.
+
+## "In the app" is a heartbeat
+
+`<InboxButton>` polls the unread count every 30 seconds while the tab is visible, and each poll records the user as present. An admin impersonating the user (better-auth's admin plugin) doesn't count.
+
+A user with no poll in the last 2 minutes (`presenceWindow`) is away. An `ifUnreadAfter` email goes out right away for an away user instead of waiting. Set `sendNowIfAway: false` on a rule to always wait. With `pollInterval: 0`, or on pages without the inbox mounted, users count as away.
+
+## Run the sweep on a schedule
+
+A plugin can't run jobs. Delayed emails and retries go out when you call `processDeliveries` from your own scheduler, every minute or so:
+
+```ts title="app/api/cron/inbox/route.ts"
+// Vercel Cron, a worker, a queue: anything that calls this
+export async function GET() {
+  const result = await auth.api.processDeliveries({});
+  return Response.json(result); // { sent, skipped, retrying, failed, hasMore }
+}
+```
+
+Emails that are due right away (an away user, a rule with no delay) are sent inside `notify` when better-auth has a background task handler (`advanced: { backgroundTasks: { handler: waitUntil } }`) and the batch is 25 or fewer. Otherwise, including large org fan-outs, they go out on the next sweep.
+
+Each sweep handles `batchSize` deliveries (100 by default) and returns `hasMore` when more are due.
+
+## Delivery guarantee
+
+Delivery is at-least-once. Each delivery is claimed atomically before it's sent, so overlapping sweeps don't double-send.
+
+A failed send retries with backoff: 1 minute, doubling, up to an hour. It is marked `failed` after `maxAttempts` (5 by default).
+
+A worker that dies mid-send has its delivery retried five minutes later. A crash after SES accepted the email can therefore send it twice.
+
+## Opting out
+
+There are no built-in preferences yet. `shouldDeliver: ({ notification, user, channel }) => boolean | Promise<boolean>` lets you check your own before each send. Return `false` to skip the delivery.
+
+## Checking what went out
+
+Every delivery is a row in `notificationDelivery`, with its status and the reason it was skipped or the last error. See [Schema](/docs/notifications/schema).

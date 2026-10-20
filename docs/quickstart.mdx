@@ -1,0 +1,96 @@
+---
+title: Quickstart
+description: Add the plugin, migrate, drop in the bell and send a first notification to an existing better-auth app.
+group: get started
+order: 2
+---
+
+This takes an existing better-auth app to a working bell and a first notification. You need better-auth already set up with a database.
+
+<Steps>
+
+### Add the plugin
+
+Add the plugin to your better-auth config:
+
+```ts title="lib/auth.ts"
+import { betterAuth } from "better-auth";
+import { inbox } from "@byo-oss/notifications";
+
+export const auth = betterAuth({
+  // ...your existing config
+  plugins: [inbox()],
+});
+```
+
+### Migrate
+
+The plugin declares the `notification` table. Your existing better-auth workflow creates it:
+
+```sh
+npx @better-auth/cli migrate --config lib/auth.ts
+```
+
+Use `generate` instead of `migrate` for drizzle or prisma. Point `--config` at your better-auth config if the CLI doesn't find it on its own.
+
+### Add the client plugin
+
+```ts title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/react";
+import { inboxClient } from "@byo-oss/notifications/client";
+
+export const authClient = createAuthClient({
+  plugins: [inboxClient()],
+});
+```
+
+### Drop in the component
+
+Add it to any client component, such as your navbar:
+
+```tsx title="components/navbar.tsx"
+"use client";
+import { InboxButton } from "@byo-oss/notifications/react";
+import { useRouter } from "next/navigation";
+import { authClient } from "@/lib/auth-client";
+
+export function Navbar() {
+  const router = useRouter();
+  return <InboxButton client={authClient} onNavigate={(href) => router.push(href)} />;
+}
+```
+
+`InboxButton` renders its own `<button>`, so don't wrap it in another one. If you use Tailwind v4, the styles also need a `@source` line. See [React components](/docs/notifications/react).
+
+### Send a notification
+
+Call `notify` from any server code: a server action, a webhook handler, a cron job:
+
+```ts title="app/actions.ts"
+await auth.api.notify({
+  body: {
+    userId: comment.authorId,
+    type: "comment.reply",
+    title: `${user.name} replied to your comment`,
+    href: `/posts/${post.id}#comment-${comment.id}`,
+  },
+});
+```
+
+`notify` is server-only. It's callable through `auth.api` and never exposed as an HTTP route.
+
+</Steps>
+
+<Next>
+
+## Set up with a coding agent
+
+`npx skills add byo-oss/notifications` installs an agent skill that walks a coding agent through these steps, with a check after each one. `npx skills sync` picks it up from `node_modules` too.
+
+</Next>
+
+## Next steps
+
+- [Notify an organization](/docs/notifications/organizations) sends one notification to every member of an org.
+- [Email if unread](/docs/notifications/email) emails a notification if nobody reads it in the app.
+- [Server API](/docs/notifications/api) lists every endpoint and function.

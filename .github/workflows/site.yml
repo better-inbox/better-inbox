@@ -1,0 +1,28 @@
+name: site
+
+# byo.dev reads docs/ from main and this package's version from npm when it builds.
+# Ask it to rebuild after either changes, instead of waiting for its nightly run.
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**"]
+  workflow_run:
+    workflows: [release]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  rebuild:
+    if: github.event_name == 'push' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch a byo.dev rebuild
+        env:
+          GH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::SITE_DISPATCH_TOKEN is not set; byo.dev picks this up in its nightly build."
+            exit 0
+          fi
+          gh api repos/byo-oss/site/dispatches -f event_type=package-released
