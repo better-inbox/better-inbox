@@ -1,4 +1,4 @@
-import type { AuthContext, User } from "better-auth";
+import type { AuthContext, User, Where } from "better-auth";
 import type {
   InboxPresence,
   Notification,
@@ -207,17 +207,27 @@ export async function processDueDeliveries(
 ): Promise<SweepResult> {
   const now = new Date();
   // A worker that died mid-send leaves its row in "sending". Release it first
-  // so the claim below can stay a plain AND guard on status.
+  // so the claim below can stay a plain AND guard on status, unless it has
+  // used up its attempts: a send that keeps getting killed would loop forever.
+  const stale: Where[] = [
+    { field: "status", value: "sending" },
+    {
+      field: "claimedAt",
+      operator: "lt",
+      value: new Date(now.getTime() - options.leaseMs),
+    },
+  ];
   await context.adapter.updateMany({
     model: "notificationDelivery",
     where: [
-      { field: "status", value: "sending" },
-      {
-        field: "claimedAt",
-        operator: "lt",
-        value: new Date(now.getTime() - options.leaseMs),
-      },
+      ...stale,
+      { field: "attempts", operator: "gte", value: options.maxAttempts },
     ],
+    update: { status: "failed", detail: "send did not finish" },
+  });
+  await context.adapter.updateMany({
+    model: "notificationDelivery",
+    where: stale,
     update: { status: "pending" },
   });
 

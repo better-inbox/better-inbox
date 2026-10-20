@@ -185,7 +185,7 @@ inbox({
 
 **Read and seen both cancel it.** Clicking a notification marks it read. Opening the panel marks the unread rows it shows as *seen* (`seenAt`), which doesn't touch the badge or `read` but does cancel a pending email.
 
-**"In the app" is a heartbeat.** `<InboxButton>` polls the unread count every 30 seconds while the tab is visible, and each poll (and each list fetch) records the user as present. A user with no poll in the last 2 minutes (`presenceWindow`) is away, so an `ifUnreadAfter` email goes out right away instead of waiting. Set `sendNowIfAway: false` on a rule to always wait. With `pollInterval: 0`, or on pages without the inbox mounted, users count as away.
+**"In the app" is a heartbeat.** `<InboxButton>` polls the unread count every 30 seconds while the tab is visible, and each poll records the user as present. A user with no poll in the last 2 minutes (`presenceWindow`) is away, so an `ifUnreadAfter` email goes out right away instead of waiting. Set `sendNowIfAway: false` on a rule to always wait. With `pollInterval: 0`, or on pages without the inbox mounted, users count as away.
 
 **Run the sweep on a schedule.** A plugin can't run jobs, so delayed emails and retries go out when you call `processDeliveries` from your own scheduler, every minute or so:
 

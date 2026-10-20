@@ -213,11 +213,15 @@ export function useInbox(
     setNotifications((prev) =>
       prev.map((n) => (freshIds.has(n.id) && !n.seenAt ? { ...n, seenAt } : n)),
     );
-    try {
-      const res = await markSeenRequest({ ids: fresh });
-      if (res.error) throw res.error;
-    } catch {
-      for (const id of fresh) sentSeenRef.current.delete(id);
+    // the endpoint takes 100 ids, and a few Load more clicks can pass that
+    for (let i = 0; i < fresh.length; i += 100) {
+      const chunk = fresh.slice(i, i + 100);
+      try {
+        const res = await markSeenRequest({ ids: chunk });
+        if (res.error) throw res.error;
+      } catch {
+        for (const id of chunk) sentSeenRef.current.delete(id);
+      }
     }
   }, []);
 

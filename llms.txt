@@ -38,7 +38,7 @@ inbox({
   // presenceWindow: 120000, maxAttempts: 5, batchSize: 100
 });
 await auth.api.processDeliveries({}); // REQUIRED from a cron (every minute): sends delayed emails and retries → { sent, skipped, retrying, failed, hasMore }
-// The email is skipped if the notification is read, or seen (seenAt, set when the panel shows it). Users with no inbox poll within presenceWindow are "away": ifUnreadAfter emails go out right away (sendNowIfAway: false to always wait). Due-now emails send inside notify only with advanced.backgroundTasks.handler and <=25 rows; otherwise on the next sweep. At-least-once; atomic claim; backoff 1m doubling to 1h; rows in notificationDelivery (status pending|sending|sent|skipped|failed, detail).
+// The email is skipped if the notification is read, or seen (seenAt, set when the panel shows it). Users with no unread-count poll within presenceWindow are "away": ifUnreadAfter emails go out right away (sendNowIfAway: false to always wait). Due-now emails send inside notify only with advanced.backgroundTasks.handler and <=25 rows; otherwise on the next sweep. At-least-once; atomic claim; backoff 1m doubling to 1h; rows in notificationDelivery (status pending|sending|sent|skipped|failed, detail).
 // A channel is { deliver({ notification, user, appUrl }) } that throws on failure.
 
 ## Read/mutate (session-scoped to caller)

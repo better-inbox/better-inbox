@@ -143,8 +143,10 @@ export const processDeliveries = (options: ResolvedInboxOptions) =>
     async (ctx) => processDueDeliveries(ctx.context, options, ctx.body?.limit),
   );
 
-// The inbox polls list and unread-count while the tab is visible, which makes
-// them the presence heartbeat for "send now if the user is away".
+// The inbox polls unread-count while the tab is visible and on every refresh,
+// which makes it the presence heartbeat for "send now if the user is away".
+// list is left out: a refresh fetches both at once, and two first-time
+// heartbeats would race to create the same unique row.
 async function heartbeat(
   context: AuthContext & { session: { user: { id: string } } },
   options: ResolvedInboxOptions,
@@ -166,7 +168,7 @@ const listQuerySchema = z
   })
   .optional();
 
-export const listNotifications = (options: ResolvedInboxOptions) =>
+export const listNotifications = () =>
   createAuthEndpoint(
     "/inbox/list",
     {
@@ -175,7 +177,6 @@ export const listNotifications = (options: ResolvedInboxOptions) =>
       use: [sessionMiddleware],
     },
     async (ctx) => {
-      await heartbeat(ctx.context, options);
       const { filter = "all", limit = 20, offset = 0, organizationId } =
         ctx.query ?? {};
       const where: Where[] = [

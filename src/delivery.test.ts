@@ -109,7 +109,7 @@ describe("email if unread", () => {
     const { email, options } = emailAfter15();
     const auth = createTestAuth(options);
     const alice = await signUpUser(auth, "alice@example.com");
-    await auth.api.listNotifications({ headers: alice.headers, query: {} });
+    await auth.api.unreadCount({ headers: alice.headers, query: {} });
     advance(3 * MINUTE);
 
     await auth.api.notify({
@@ -337,6 +337,29 @@ describe("processDeliveries", () => {
     ]);
   });
 
+  it("fails a delivery whose sends keep dying once attempts run out", async () => {
+    const { email, options } = emailAfter15({ maxAttempts: 2 });
+    const auth = createTestAuth(options);
+    const alice = await signUpUser(auth, "alice@example.com");
+    await auth.api.notify({
+      body: { userId: alice.user.id, type: "billing.payment_failed", title: "x" },
+    });
+    const ctx = await auth.$context;
+    const [row] = await deliveries(auth);
+    await ctx.adapter.update({
+      model: "notificationDelivery",
+      where: [{ field: "id", value: row!.id }],
+      update: { status: "sending", claimedAt: new Date(), attempts: 2 },
+    });
+
+    advance(6 * MINUTE);
+    expect(await auth.api.processDeliveries({})).toMatchObject({ sent: 0 });
+    expect(email.sent).toHaveLength(0);
+    expect(await deliveries(auth)).toMatchObject([
+      { status: "failed", detail: "send did not finish" },
+    ]);
+  });
+
   it("works through an org fan-out across batches", async () => {
     const { email, options } = emailAfter15({ batchSize: 2 });
     const auth = createTestAuthWithOrg(options);
@@ -422,6 +445,26 @@ describe("markSeen", () => {
 });
 
 describe("options", () => {
+  it("type-checks routes against the configured channel names", () => {
+    const email = fakeChannel().channel;
+    // the README shape, inline, so the channel names infer as literals
+    inbox({
+      channels: { email },
+      routes: {
+        "billing.payment_failed": [
+          { channel: "email", ifUnreadAfter: { minutes: 15 } },
+        ],
+      },
+    });
+    expect(() =>
+      inbox({
+        channels: { email },
+        // @ts-expect-error "sms" is not a configured channel
+        routes: { x: [{ channel: "sms" }] },
+      }),
+    ).toThrow(/channel "sms"/);
+  });
+
   it("rejects a route that names an unknown channel", () => {
     expect(() =>
       inbox({
@@ -429,6 +472,29 @@ describe("options", () => {
         routes: { x: [{ channel: "sms" as never }] },
       }),
     ).toThrow(/channel "sms"/);
+  });
+
+  it("records presence from unread-count only, at most once a minute", async () => {
+    const { options } = emailAfter15();
+    const auth = createTestAuth(options);
+    const alice = await signUpUser(auth, "alice@example.com");
+    const ctx = await auth.$context;
+    const presence = () =>
+      ctx.adapter.findMany<{ lastSeenAt: Date }>({ model: "inboxPresence" });
+
+    await auth.api.listNotifications({ headers: alice.headers, query: {} });
+    expect(await presence()).toHaveLength(0);
+
+    await auth.api.unreadCount({ headers: alice.headers, query: {} });
+    const [first] = await presence();
+    advance(30_000);
+    await auth.api.unreadCount({ headers: alice.headers, query: {} });
+    expect((await presence())[0]!.lastSeenAt).toEqual(first!.lastSeenAt);
+    advance(30_000);
+    await auth.api.unreadCount({ headers: alice.headers, query: {} });
+    const rows = await presence();
+    expect(rows).toHaveLength(1);
+    expect(new Date(rows[0]!.lastSeenAt).getTime()).toBe(Date.now());
   });
 
   it("does not record presence when no channels are configured", async () => {

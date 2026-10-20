@@ -90,7 +90,7 @@ export const inbox = <
     endpoints: {
       notify: notify(opts),
       processDeliveries: processDeliveries(opts),
-      listNotifications: listNotifications(opts),
+      listNotifications: listNotifications(),
       markRead: markRead(),
       markSeen: markSeen(),
       markAllRead: markAllRead(),
