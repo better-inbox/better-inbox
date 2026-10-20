@@ -1,5 +1,6 @@
+import { SandboxError, SESError, ValidationError, WrapsEmail } from "@wraps.dev/email";
 import { describe, expect, it, vi } from "vitest";
-import type { DeliveryContext } from "./delivery";
+import { PermanentDeliveryError, type DeliveryContext } from "./delivery";
 import { createTestAuth, signUpUser } from "./test-utils";
 import { testChannel } from "./testing";
 import { notificationUrl, renderEmail, wrapsEmail } from "./wraps";
@@ -42,8 +43,28 @@ testChannel(
           },
         },
       }),
+    permanentlyFailing: () =>
+      wrapsEmail({
+        from: "notify@acme.test",
+        client: {
+          send: async () => {
+            throw new ValidationError(
+              "Invalid email format in field: to[0]",
+              "to[0]",
+            );
+          },
+        },
+      }),
   },
 );
+
+/** A channel whose SES client rejects with `error`. */
+function rejecting(error: unknown) {
+  return wrapsEmail({
+    from: "notify@acme.test",
+    client: { send: vi.fn().mockRejectedValue(error) },
+  });
+}
 
 describe("wrapsEmail", () => {
   it("sends the rendered notification to the user's address", async () => {
@@ -76,6 +97,65 @@ describe("wrapsEmail", () => {
       client: { send: vi.fn().mockRejectedValue(new Error("MessageRejected")) },
     });
     await expect(channel.deliver(context())).rejects.toThrow("MessageRejected");
+  });
+
+  it("fails at once when the recipient address is malformed or missing", async () => {
+    for (const [field, message] of [
+      ["to", "Missing required field: to"],
+      ["to[0]", "Invalid email format in field: to[0]"],
+    ] as const) {
+      const channel = rejecting(new ValidationError(message, field));
+      const error = await channel.deliver(context()).catch((e) => e);
+      expect(error).toBeInstanceOf(PermanentDeliveryError);
+      expect(error.permanent).toBe(true);
+      expect(error.message).toBe(message);
+      expect(error.cause).toBeInstanceOf(ValidationError);
+    }
+  });
+
+  it("fails at once for a malformed address from the real SDK", async () => {
+    const channel = wrapsEmail({
+      from: "notify@acme.test",
+      client: new WrapsEmail({ region: "us-east-1" }),
+    });
+    const ctx = context();
+    const error = await channel
+      .deliver({ ...ctx, user: { ...ctx.user, email: "not-an-email" } })
+      .catch((e) => e);
+    expect(error).toBeInstanceOf(PermanentDeliveryError);
+    expect(error.message).toContain("to[0]");
+  });
+
+  it("keeps a sender or config error retrying, since it affects every send", async () => {
+    const channel = rejecting(new ValidationError("Invalid email format in field: from", "from"));
+    const error = await channel.deliver(context()).catch((e) => e);
+    expect(error).not.toBeInstanceOf(PermanentDeliveryError);
+    expect(error.permanent).toBeUndefined();
+  });
+
+  it("keeps throttling, network and account errors retrying", async () => {
+    const errors = [
+      Object.assign(new Error("Rate exceeded"), { name: "ThrottlingException" }),
+      new SESError("Rate exceeded", "Throttling", "req-1", true),
+      new SESError("Service unavailable", "ServiceUnavailable", "req-2", true),
+      new TypeError("fetch failed"),
+      new SandboxError(
+        "SES rejected this send: Email address is not verified",
+        "MessageRejected",
+        "req-3",
+        false,
+        "us-east-1",
+      ),
+      new SESError("Message rejected", "MessageRejected", "req-4", false),
+    ];
+    for (const error of errors) {
+      const thrown = await rejecting(error)
+        .deliver(context())
+        .catch((e) => e);
+      expect(thrown).toBe(error);
+      expect(thrown).not.toBeInstanceOf(PermanentDeliveryError);
+      expect(thrown.permanent).toBeUndefined();
+    }
   });
 
   it("uses a custom render", async () => {
