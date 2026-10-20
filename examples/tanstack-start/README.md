@@ -1,6 +1,6 @@
-# better-inbox × TanStack Start
+# @byo-oss/notifications × TanStack Start
 
-TanStack Start + better-auth (SQLite) + better-inbox, with an end-to-end suite
+TanStack Start + better-auth (SQLite) + @byo-oss/notifications, with an end-to-end suite
 that proves the wiring.
 
 ```
