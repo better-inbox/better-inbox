@@ -29,7 +29,7 @@ export type WrapsEmailChannelOptions = {
 
 /**
  * Email channel that sends through your own AWS SES account with
- * `@wraps.dev/email`. Install it alongside better-inbox:
+ * `@wraps.dev/email`. Install it alongside @byo-oss/notifications:
  * `npm install @wraps.dev/email`.
  */
 export function wrapsEmail(options: WrapsEmailChannelOptions): InboxChannel {

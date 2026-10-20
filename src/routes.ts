@@ -162,7 +162,7 @@ async function heartbeat(
   try {
     await touchPresence(context, context.session.user.id);
   } catch (error) {
-    context.logger.error("[better-inbox] failed to record presence", error);
+    context.logger.error("[@byo-oss/notifications] failed to record presence", error);
   }
 }
 

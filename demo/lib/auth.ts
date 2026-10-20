@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { organization } from "better-auth/plugins";
-import { inbox } from "better-inbox";
+import { inbox } from "@byo-oss/notifications";
 import Database from "better-sqlite3";
 
 export const auth = betterAuth({
