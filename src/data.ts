@@ -1,4 +1,9 @@
-import type { AuthContext, Where } from "better-auth";
+import {
+  type AuthContext,
+  type DBTransactionAdapter,
+  getCurrentAdapter,
+  type Where,
+} from "better-auth";
 import { createAuthMiddleware, isAPIError } from "better-auth/api";
 import { findManyIn, IN_CHUNK } from "./adapter";
 import type { Notification, NotificationDelivery } from "./schema";
@@ -21,12 +26,22 @@ async function inboxContext(auth: AuthWithContext, caller: string) {
   return context;
 }
 
+// inside a better-auth transaction (runWithTransaction, e.g. SCIM
+// deprovisioning) this is that transaction, so our writes commit and roll back
+// with the caller's; the outer adapter would wait on it, or deadlock on one
+// connection
+const currentAdapter = (context: AuthContext) =>
+  getCurrentAdapter(context.adapter);
+
 // deliveries go first: adapters without foreign keys (memory, MongoDB) don't
 // cascade, and a delivery must never outlive its notification
-async function deleteNotifications(context: AuthContext, where: Where[]) {
+async function deleteNotifications(
+  adapter: DBTransactionAdapter,
+  where: Where[],
+) {
   let deleted = 0;
   for (;;) {
-    const page = await context.adapter.findMany<Pick<Notification, "id">>({
+    const page = await adapter.findMany<Pick<Notification, "id">>({
       model: "notification",
       where,
       limit: IN_CHUNK,
@@ -34,11 +49,11 @@ async function deleteNotifications(context: AuthContext, where: Where[]) {
     });
     if (page.length === 0) return deleted;
     const ids = page.map((row) => row.id);
-    await context.adapter.deleteMany({
+    await adapter.deleteMany({
       model: "notificationDelivery",
       where: [{ field: "notificationId", operator: "in", value: ids }],
     });
-    const removed = await context.adapter.deleteMany({
+    const removed = await adapter.deleteMany({
       model: "notification",
       where: [{ field: "id", operator: "in", value: ids }],
     });
@@ -59,13 +74,14 @@ async function deleteNotifications(context: AuthContext, where: Where[]) {
  * user row is deleted.
  */
 export async function deleteUserRows(context: AuthContext, userId: string) {
-  await deleteNotifications(context, [{ field: "userId", value: userId }]);
+  const adapter = await currentAdapter(context);
+  await deleteNotifications(adapter, [{ field: "userId", value: userId }]);
   // deliveries carry userId too, so none can be left behind
-  await context.adapter.deleteMany({
+  await adapter.deleteMany({
     model: "notificationDelivery",
     where: [{ field: "userId", value: userId }],
   });
-  await context.adapter.deleteMany({
+  await adapter.deleteMany({
     model: "inboxPresence",
     where: [{ field: "userId", value: userId }],
   });
@@ -102,7 +118,7 @@ export const organizationCleanupHook = {
     const where = orgCleanup[ctx.path]?.(returned);
     if (!where) return;
     try {
-      await deleteNotifications(ctx.context, where);
+      await deleteNotifications(await currentAdapter(ctx.context), where);
     } catch (error) {
       // the org change already happened; failing the response wouldn't undo it
       ctx.context.logger.error(
@@ -116,14 +132,17 @@ export const organizationCleanupHook = {
 /**
  * Deletes every notification (and its deliveries) stamped with this
  * organization. The plugin already does this after `/organization/delete`;
- * call it for organizations deleted any other way.
+ * call it for organizations deleted any other way. Inside a better-auth
+ * transaction (`runWithTransaction`) it runs in that transaction and rolls
+ * back with it.
  */
 export async function deleteOrganizationData(
   auth: AuthWithContext,
   organizationId: string,
 ): Promise<{ notifications: number }> {
   const context = await inboxContext(auth, "deleteOrganizationData");
-  const notifications = await deleteNotifications(context, [
+  const adapter = await currentAdapter(context);
+  const notifications = await deleteNotifications(adapter, [
     { field: "organizationId", value: organizationId },
   ]);
   return { notifications };
@@ -133,14 +152,17 @@ export async function deleteOrganizationData(
  * Deletes one person's notifications (and deliveries) in one organization, for
  * when they leave it or are removed. Their other notifications stay. The
  * plugin already does this after `/organization/remove-member` and
- * `/organization/leave`.
+ * `/organization/leave`. Inside a better-auth transaction
+ * (`runWithTransaction`, as in SCIM deprovisioning) it runs in that
+ * transaction and rolls back with it.
  */
 export async function deleteMemberData(
   auth: AuthWithContext,
   { userId, organizationId }: { userId: string; organizationId: string },
 ): Promise<{ notifications: number }> {
   const context = await inboxContext(auth, "deleteMemberData");
-  const notifications = await deleteNotifications(context, [
+  const adapter = await currentAdapter(context);
+  const notifications = await deleteNotifications(adapter, [
     { field: "userId", value: userId },
     { field: "organizationId", value: organizationId },
   ]);
@@ -199,6 +221,7 @@ export async function exportNotificationsData(
   options: ExportNotificationsDataOptions = {},
 ): Promise<{ notifications: ExportedNotification[]; cursor: string | null }> {
   const context = await inboxContext(auth, "exportNotificationsData");
+  const adapter = await currentAdapter(context);
   const fail = (message: string) =>
     new Error(`[@byo-oss/notifications] exportNotificationsData: ${message}`);
   const limit = options.limit ?? 500;
@@ -217,7 +240,7 @@ export async function exportNotificationsData(
   if (!Number.isInteger(offset) || offset < 0) {
     throw fail(`invalid cursor: ${options.cursor}`);
   }
-  const page = await context.adapter.findMany<Notification>({
+  const page = await adapter.findMany<Notification>({
     model: "notification",
     where,
     limit: limit + 1,
@@ -228,13 +251,13 @@ export async function exportNotificationsData(
   if (rows.length === 0) return { notifications: [], cursor: null };
 
   const [users, deliveries] = await Promise.all([
-    findManyIn<{ id: string; email: string }>(context, {
+    findManyIn<{ id: string; email: string }>(adapter, {
       model: "user",
       field: "id",
       values: rows.map((n) => n.userId),
       select: ["id", "email"],
     }),
-    findManyIn<NotificationDelivery>(context, {
+    findManyIn<NotificationDelivery>(adapter, {
       model: "notificationDelivery",
       field: "notificationId",
       values: rows.map((n) => n.id),

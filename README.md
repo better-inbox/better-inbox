@@ -175,6 +175,8 @@ await deleteMemberData(auth, { userId, organizationId });
 
 `organizationId` has no foreign key, because the organization plugin is optional. These functions do what a cascade would. Call them too if your own `organizationHooks` (`afterDeleteOrganization`, `afterRemoveMember`) throw: that error replaces the response the plugin reads, so its cleanup skips. A notification fanned out at the moment its org is deleted can also survive; running `deleteOrganizationData` again is safe.
 
+Called inside a better-auth transaction (`runWithTransaction`, as in a `@better-auth/scim` projection deprovisioning a member), they run in it: their deletes commit or roll back with the rest of it.
+
 ## Email if unread
 
 Route a notification type to email, and it is emailed only if nobody has read or seen it in the app first. The in-app row is always written; email is a follow-up to it.

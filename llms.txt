@@ -48,6 +48,7 @@ await auth.api.processDeliveries({}); // REQUIRED from a cron (every minute): se
 // deleting a user removes their notifications, deliveries and presence (FK cascade on SQL; a user-delete hook elsewhere)
 await deleteOrganizationData(auth, organizationId) // → { notifications }; for deletes made any other way
 await deleteMemberData(auth, { userId, organizationId }) // → { notifications }
+// inside a better-auth transaction (runWithTransaction, e.g. a @better-auth/scim projection deprovisioning a member) both run in it and roll back with it
 await exportNotificationsData(auth, { organizationId?, cursor?, limit: 500 }) // limit 1-1000; → { notifications: [{ ...row, userEmail, deliveries }], cursor }; loop until cursor is null; plain JSON, ISO dates; export with writes stopped (a delete mid-export can skip a row)
 
 ## Read/mutate (session-scoped to caller)

@@ -1,3 +1,7 @@
+import {
+  getCurrentAdapter,
+  runWithTransaction,
+} from "@better-auth/core/context";
 import { getAuthTables } from "@better-auth/core/db";
 import { memoryAdapter, type MemoryDB } from "@better-auth/memory-adapter";
 import { betterAuth } from "better-auth";
@@ -76,6 +80,8 @@ async function setup() {
   };
   return { auth, alice, bob, carol, acme, globex, rows };
 }
+
+type Fixture = Awaited<ReturnType<typeof setup>>;
 
 describe("organization cleanup", () => {
   it("deleting an organization drops its notifications and deliveries", async () => {
@@ -176,6 +182,82 @@ describe("deleteOrganizationData / deleteMemberData", () => {
     await expect(deleteOrganizationData(auth, "org")).rejects.toThrow(
       /needs the inbox plugin/,
     );
+  });
+
+  // how SCIM deprovisioning calls them: the member row is deleted inside the
+  // directory's transaction, and the cleanup has to ride along with it
+  describe("inside a better-auth transaction", () => {
+    const removeBobFromAcme = async ({ auth, bob, acme }: Fixture) => {
+      const trx = await getCurrentAdapter((await auth.$context).adapter);
+      await trx.deleteMany({
+        model: "member",
+        where: [
+          { field: "userId", value: bob.user.id },
+          { field: "organizationId", value: acme.id },
+        ],
+      });
+      await deleteMemberData(auth, {
+        userId: bob.user.id,
+        organizationId: acme.id,
+      });
+    };
+    const bobInAcme = async ({ auth, bob, acme }: Fixture) => {
+      const { adapter } = await auth.$context;
+      return adapter.count({
+        model: "member",
+        where: [
+          { field: "userId", value: bob.user.id },
+          { field: "organizationId", value: acme.id },
+        ],
+      });
+    };
+
+    it("commits with the caller's transaction", async () => {
+      const fixture = await setup();
+      const { auth, bob, acme, rows } = fixture;
+
+      await runWithTransaction((await auth.$context).adapter, () =>
+        removeBobFromAcme(fixture),
+      );
+
+      expect(await bobInAcme(fixture)).toBe(0);
+      const after = await rows();
+      expect(after.of(acme.id, bob.user.id)).toHaveLength(0);
+      expect(after.of(acme.id)).toHaveLength(2);
+      expect(after.orphans).toEqual([]);
+    });
+
+    it("rolls back with the caller's transaction", async () => {
+      const fixture = await setup();
+      const { auth, bob, acme, rows } = fixture;
+
+      await expect(
+        runWithTransaction((await auth.$context).adapter, async () => {
+          await removeBobFromAcme(fixture);
+          throw new Error("directory write failed");
+        }),
+      ).rejects.toThrow("directory write failed");
+
+      expect(await bobInAcme(fixture)).toBe(1);
+      const after = await rows();
+      expect(after.of(acme.id, bob.user.id)).toHaveLength(1);
+      expect(after.deliveries).toHaveLength(7);
+    });
+
+    it("rolls back an organization's delete too", async () => {
+      const { auth, acme, rows } = await setup();
+
+      await expect(
+        runWithTransaction((await auth.$context).adapter, async () => {
+          await deleteOrganizationData(auth, acme.id);
+          throw new Error("delete failed");
+        }),
+      ).rejects.toThrow("delete failed");
+
+      const after = await rows();
+      expect(after.of(acme.id)).toHaveLength(3);
+      expect(after.deliveries).toHaveLength(7);
+    });
   });
 });
 

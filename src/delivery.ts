@@ -158,7 +158,7 @@ async function presentUserIds(
   now: Date,
 ) {
   if (userIds.length === 0) return new Set<string>();
-  const rows = await findManyIn<InboxPresence>(context, {
+  const rows = await findManyIn<InboxPresence>(context.adapter, {
     model: "inboxPresence",
     field: "userId",
     values: userIds,
@@ -309,12 +309,12 @@ async function attemptDeliveries(
 
   // batchSize may exceed findMany's default 100 rows and D1's 100 parameters
   const [notifications, users] = await Promise.all([
-    findManyIn<Notification>(context, {
+    findManyIn<Notification>(context.adapter, {
       model: "notification",
       field: "id",
       values: deliveries.map((d) => d.notificationId),
     }),
-    findManyIn<User>(context, {
+    findManyIn<User>(context.adapter, {
       model: "user",
       field: "id",
       values: deliveries.map((d) => d.userId),

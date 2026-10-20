@@ -1,4 +1,4 @@
-import type { AuthContext, Where } from "better-auth";
+import type { DBTransactionAdapter, Where } from "better-auth";
 
 // Cloudflare D1 binds at most 100 parameters per query, so `in` lists are split
 // into chunks that leave room for the rest of the where clause
@@ -20,7 +20,7 @@ export function chunk<T>(values: T[], size = IN_CHUNK): T[][] {
  * rows there are.
  */
 export async function findManyIn<T>(
-  context: AuthContext,
+  adapter: DBTransactionAdapter,
   {
     model,
     field,
@@ -38,7 +38,7 @@ export async function findManyIn<T>(
   const rows: T[] = [];
   for (const part of chunk([...new Set(values)])) {
     for (let offset = 0; ; offset += FIND_PAGE) {
-      const page = await context.adapter.findMany<T>({
+      const page = await adapter.findMany<T>({
         model,
         where: [...where, { field, operator: "in", value: part }],
         limit: FIND_PAGE,
