@@ -118,6 +118,10 @@ export {
   type AuthWithContext,
   deleteMemberData,
   deleteOrganizationData,
+  type ExportedDelivery,
+  type ExportedNotification,
+  type ExportNotificationsDataOptions,
+  exportNotificationsData,
 } from "./data";
 export { INBOX_ERROR_CODES } from "./error-codes";
 export type { DeliveryStatus, Notification, NotificationDelivery } from "./schema";

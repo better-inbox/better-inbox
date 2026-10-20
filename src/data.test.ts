@@ -2,7 +2,12 @@ import { getAuthTables } from "@better-auth/core/db";
 import { memoryAdapter, type MemoryDB } from "@better-auth/memory-adapter";
 import { betterAuth } from "better-auth";
 import { describe, expect, it } from "vitest";
-import { deleteMemberData, deleteOrganizationData } from "./data";
+import {
+  deleteMemberData,
+  deleteOrganizationData,
+  type ExportedNotification,
+  exportNotificationsData,
+} from "./data";
 import type { Notification, NotificationDelivery } from "./schema";
 import { createTestAuthWithOrg, signUpUser } from "./test-utils";
 
@@ -171,5 +176,63 @@ describe("deleteOrganizationData / deleteMemberData", () => {
     await expect(deleteOrganizationData(auth, "org")).rejects.toThrow(
       /needs the inbox plugin/,
     );
+  });
+});
+
+describe("exportNotificationsData", () => {
+  it("pages through every notification with deliveries and the user's email", async () => {
+    const { auth, rows } = await setup();
+    const exported: ExportedNotification[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const page = await exportNotificationsData(auth, { cursor, limit: 2 });
+      exported.push(...page.notifications);
+      cursor = page.cursor;
+      pages++;
+    } while (cursor);
+
+    const { notifications, deliveries } = await rows();
+    expect(pages).toBe(4);
+    expect(exported.map((n) => n.id).sort()).toEqual(
+      notifications.map((n) => n.id).sort(),
+    );
+    expect(exported.flatMap((n) => n.deliveries)).toHaveLength(
+      deliveries.length,
+    );
+    const bobs = exported.find((n) => n.type === "personal");
+    expect(bobs).toMatchObject({
+      userEmail: "bob@example.com",
+      title: "hi",
+      createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      deliveries: [
+        {
+          channel: "email",
+          status: "pending",
+          scheduledFor: expect.stringMatching(/^\d{4}-/),
+        },
+      ],
+    });
+    // plain JSON: nothing is lost in a round trip
+    expect(JSON.parse(JSON.stringify(exported))).toEqual(exported);
+  });
+
+  it("exports one organization's notifications", async () => {
+    const { auth, acme } = await setup();
+
+    const page = await exportNotificationsData(auth, {
+      organizationId: acme.id,
+    });
+
+    expect(page.cursor).toBeNull();
+    expect(page.notifications).toHaveLength(3);
+    expect(
+      page.notifications.every((n) => n.organizationId === acme.id),
+    ).toBe(true);
+    expect(page.notifications.map((n) => n.userEmail).sort()).toEqual([
+      "alice@example.com",
+      "bob@example.com",
+      "carol@example.com",
+    ]);
   });
 });

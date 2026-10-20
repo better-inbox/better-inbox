@@ -1,6 +1,6 @@
 import type { AuthContext, Where } from "better-auth";
 import { createAuthMiddleware, isAPIError } from "better-auth/api";
-import type { Notification } from "./schema";
+import type { Notification, NotificationDelivery } from "./schema";
 
 /**
  * Any better-auth instance (your `auth`). Loose on purpose: a typed instance's
@@ -8,8 +8,8 @@ import type { Notification } from "./schema";
  */
 export type AuthWithContext = { $context: Promise<object> };
 
-// ids per delete, so an org with many notifications doesn't build one huge `in`
-const DELETE_PAGE = 500;
+// rows per page for deletes and exports, so no query builds one huge `in`
+const PAGE = 500;
 
 async function inboxContext(auth: AuthWithContext, caller: string) {
   const context = (await auth.$context) as AuthContext;
@@ -29,7 +29,7 @@ async function deleteNotifications(context: AuthContext, where: Where[]) {
     const page = await context.adapter.findMany<Pick<Notification, "id">>({
       model: "notification",
       where,
-      limit: DELETE_PAGE,
+      limit: PAGE,
       select: ["id"],
     });
     if (page.length === 0) return deleted;
@@ -118,4 +118,124 @@ export async function deleteMemberData(
     { field: "organizationId", value: organizationId },
   ]);
   return { notifications };
+}
+
+type Serialized<T> = {
+  [K in keyof T]: T[K] extends Date
+    ? string
+    : T[K] extends Date | null | undefined
+      ? string | Exclude<T[K], Date>
+      : T[K];
+};
+
+export type ExportedDelivery = Serialized<NotificationDelivery>;
+
+/** One notification as exported: the documented schema, dates as ISO strings. */
+export type ExportedNotification = Serialized<Notification> & {
+  /** The user's email, to match them in the tool you're moving to. */
+  userEmail: string | null;
+  /** Its email (or other channel) deliveries. */
+  deliveries: ExportedDelivery[];
+};
+
+export type ExportNotificationsDataOptions = {
+  /** Only this organization's notifications. Omit for all of them. */
+  organizationId?: string;
+  /** `cursor` from the previous page. Omit for the first page. */
+  cursor?: string | null;
+  /**
+   * Notifications per page.
+   * @default 500
+   */
+  limit?: number;
+};
+
+// a notification has one delivery per routed channel, so the count isn't
+// known up front; page until a short page (findMany defaults to 100 rows)
+async function findAllDeliveries(context: AuthContext, notificationIds: string[]) {
+  const all: NotificationDelivery[] = [];
+  for (;;) {
+    const page = await context.adapter.findMany<NotificationDelivery>({
+      model: "notificationDelivery",
+      where: [
+        { field: "notificationId", operator: "in", value: notificationIds },
+      ],
+      limit: PAGE,
+      offset: all.length,
+      sortBy: { field: "id", direction: "asc" },
+    });
+    all.push(...page);
+    if (page.length < PAGE) return all;
+  }
+}
+
+const serialize = <T extends object>(row: T): Serialized<T> =>
+  Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [
+      key,
+      value instanceof Date ? value.toISOString() : value,
+    ]),
+  ) as Serialized<T>;
+
+/**
+ * Exports every notification (or one organization's) with its deliveries and
+ * the user's email, a page at a time, as plain JSON. Server-only; for moving
+ * to another tool or keeping an archive. Pages run in id order, and the cursor
+ * is opaque: writes during an export can shift rows between pages, so export
+ * once writes stop.
+ * Presence (`inboxPresence`) isn't exported; it's a minute-level heartbeat.
+ */
+export async function exportNotificationsData(
+  auth: AuthWithContext,
+  options: ExportNotificationsDataOptions = {},
+): Promise<{ notifications: ExportedNotification[]; cursor: string | null }> {
+  const context = await inboxContext(auth, "exportNotificationsData");
+  const limit = options.limit ?? 500;
+  const where: Where[] = [];
+  if (options.organizationId) {
+    where.push({ field: "organizationId", value: options.organizationId });
+  }
+  // an offset, not "id > last": adapters disagree on how strings sort (the
+  // memory adapter sorts with localeCompare but compares with >)
+  const offset = options.cursor ? Number.parseInt(options.cursor, 10) : 0;
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw new Error(
+      `[@byo-oss/notifications] exportNotificationsData got an invalid cursor: ${options.cursor}`,
+    );
+  }
+  const page = await context.adapter.findMany<Notification>({
+    model: "notification",
+    where,
+    limit: limit + 1,
+    offset,
+    sortBy: { field: "id", direction: "asc" },
+  });
+  const rows = page.slice(0, limit);
+  if (rows.length === 0) return { notifications: [], cursor: null };
+
+  const userIds = [...new Set(rows.map((n) => n.userId))];
+  const [users, deliveries] = await Promise.all([
+    context.adapter.findMany<{ id: string; email: string }>({
+      model: "user",
+      where: [{ field: "id", operator: "in", value: userIds }],
+      select: ["id", "email"],
+      limit: userIds.length,
+    }),
+    findAllDeliveries(
+      context,
+      rows.map((n) => n.id),
+    ),
+  ]);
+  const emails = new Map(users.map((user) => [user.id, user.email]));
+
+  return {
+    notifications: rows.map((notification) => ({
+      ...serialize(notification),
+      userEmail: emails.get(notification.userId) ?? null,
+      deliveries: deliveries
+        .filter((d) => d.notificationId === notification.id)
+        .map(serialize),
+    })),
+    cursor: page.length > limit ? String(offset + limit) : null,
+  };
 }
