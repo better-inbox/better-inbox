@@ -24,10 +24,12 @@
         "@wraps.dev/email": ">=0.15.0",
         "better-auth": "^1.6.23",
         "react": ">=18",
+        "vitest": ">=3",
       },
       "optionalPeers": [
         "@wraps.dev/email",
         "react",
+        "vitest",
       ],
     },
   },

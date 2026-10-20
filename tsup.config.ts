@@ -15,6 +15,14 @@ export default defineConfig([
     external: ["react", "better-auth", "zod", "@wraps.dev/email"],
   },
   {
+    // ESM only: vitest throws when it's require()d
+    entry: { testing: "src/testing.ts" },
+    format: ["esm"],
+    dts: true,
+    clean: false,
+    external: ["better-auth", "vitest"],
+  },
+  {
     entry: {
       "react/index": "src/react/index.ts",
     },

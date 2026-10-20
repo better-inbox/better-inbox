@@ -39,7 +39,16 @@ inbox({
 });
 await auth.api.processDeliveries({}); // REQUIRED from a cron (every minute): sends delayed emails and retries → { sent, skipped, retrying, failed, hasMore }
 // The email is skipped if the notification is read, or seen (seenAt, set once a row is ≥50% on screen for 1s in a visible tab), unless cancelIfRead: false. throttle: at most one sent email per (user, type, channel) per window; extras skipped with detail "throttled" (best-effort across concurrent processes). Impersonated sessions (admin plugin) don't count as presence. Users with no unread-count poll within presenceWindow are "away": ifUnreadAfter emails go out right away (sendNowIfAway: false to always wait). Due-now emails send inside notify only with advanced.backgroundTasks.handler and <=25 rows; otherwise on the next sweep. At-least-once; atomic claim; backoff 1m doubling to 1h; rows in notificationDelivery (status pending|sending|sent|skipped|failed, detail).
-// A channel is { deliver({ notification, user, appUrl }) } that throws on failure.
+// A channel is { deliver({ notification, user, appUrl }) } that throws on failure (retries until maxAttempts) and doesn't mutate its input. throw new PermanentDeliveryError(msg) (or an error with permanent: true) to fail at once, e.g. a hard bounce.
+// Test a custom channel (vitest, ESM only): import { testChannel, deliveryContext } from "@byo-oss/notifications/testing"; testChannel(() => myChannel(fake), { failing: () => myChannel(rejecting), permanentlyFailing?: () => myChannel(bouncing) })
+
+## Organization cleanup and export (server-only functions, not endpoints)
+
+// automatic after /organization/delete (org's rows), /organization/remove-member and /organization/leave (that member's rows in that org); inbox({ organizationCleanup: false }) turns it off
+// deleting a user removes their notifications, deliveries and presence (FK cascade on SQL; a user-delete hook elsewhere)
+await deleteOrganizationData(auth, organizationId) // → { notifications }; for deletes made any other way
+await deleteMemberData(auth, { userId, organizationId }) // → { notifications }
+await exportNotificationsData(auth, { organizationId?, cursor?, limit: 500 }) // limit 1-1000; → { notifications: [{ ...row, userEmail, deliveries }], cursor }; loop until cursor is null; plain JSON, ISO dates; export with writes stopped (a delete mid-export can skip a row)
 
 ## Read/mutate (session-scoped to caller)
 
@@ -56,15 +65,19 @@ const { notifications, unreadCount, isLoading, hasMore, loadMore, markRead, mark
 const seenRef = useSeenOnView(markSeen, { delayMs: 1000, threshold: 0.5 }); // <li ref={n.read || n.seenAt ? undefined : seenRef(n.id)}>; IntersectionObserver, marks nothing without it
 // polling refetches unread count (paused while the tab is hidden); full refresh when the tab becomes visible (refreshOnFocus, skipped if data is <5s old) and always on panel open. refresh() always fetches; refreshIfStale() respects the 5s window; concurrent refreshes share one request. markRead/markAllRead are optimistic.
 // filter: "unread" fetches unread rows only, so pageSize is the count you actually get. Locally-read rows stay until refresh(); loadMore() offsets by unread rows held. Changing filter refetches. InboxButton takes the same filter prop and hides its all/unread tabs when set to "unread".
+// labels={{ notifications, unread, all, markAllRead, empty, loadMore, unreadCount: (n) => string, badge: (n) => string, relativeTime: (date) => string }} on InboxButton/InboxPanel; defaults in defaultInboxLabels. A polite aria-live region next to the bell announces unreadCount.
 // InboxButton opens on the "unread" tab (server-filtered), tabs ordered unread, all. InboxPanel accepts view/onViewChange; uncontrolled it defaults to "unread".
 
 ## Notes
 
 - notification fields: id, userId, organizationId?, type, title, body?, href?, data? (json), read (boolean), seenAt?, createdAt
+- 0.8: every reference has onDelete: "cascade" (regenerate drizzle/prisma migrations); org delete/remove/leave cleans up automatically; tab text is "Unread"/"All"
+- schema is documented in the README (Schema); uninstall: drop notificationDelivery, then inboxPresence and notification
 - 0.6 adds seenAt plus tables notificationDelivery and inboxPresence: re-run migrate after upgrading
 - 0.6 InboxFetchClient requires inbox.markSeen; a hand-built adapter must pass it or seen never cancels emails
 - components styled with shadcn CSS variables (bg-popover, text-muted-foreground, ...); zero runtime deps; shadcn not required
 - Tailwind v4: add `@source "<path>/node_modules/@byo-oss/notifications/dist";` to your CSS (v4 skips node_modules)
 - InboxButton renders its own <button>; don't wrap it in one. className styles the wrapper; buttonClassName replaces the trigger's default classes (e.g. shadcn buttonVariants({ variant: "ghost", size: "icon" }))
-- recommend manual index on notification (userId, createdAt); with email routes also notificationDelivery (status, scheduledFor), and with throttle (userId, type, channel, sentAt)
+- recommend manual index on notification (userId, createdAt); with email routes also notificationDelivery (status, scheduledFor), and with throttle (userId, type, channel, sentAt); for org cleanup/export notification (organizationId) and notificationDelivery (notificationId)
+- in lists are chunked at 90 values, so Cloudflare D1's 100-parameter limit holds
 - community plugin, not affiliated with better-auth

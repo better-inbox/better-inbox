@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { InboxPanel } from "./inbox-panel";
+import { type InboxLabels, resolveLabels } from "./labels";
 import type { InboxFetchClient, InboxNotification } from "./use-inbox";
 import { useInbox } from "./use-inbox";
 
@@ -20,6 +21,8 @@ export type InboxButtonProps = {
    * `relative` so the unread badge stays anchored.
    */
   buttonClassName?: string;
+  /** Replace any of the English strings. */
+  labels?: Partial<InboxLabels>;
 };
 
 const DEFAULT_BUTTON_CLASS =
@@ -35,7 +38,9 @@ export function InboxButton({
   organizationId,
   className,
   buttonClassName,
+  labels: labelOverrides,
 }: InboxButtonProps) {
+  const labels = resolveLabels(labelOverrides);
   const [view, setView] = useState<"unread" | "all">("unread");
   // a filter prop locks the panel to that list; without one, the tabs choose
   // what to fetch, so the unread tab is a real page of unread rows
@@ -49,6 +54,8 @@ export function InboxButton({
   });
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const countId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -58,7 +65,10 @@ export function InboxButton({
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
     };
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -79,7 +89,9 @@ export function InboxButton({
     <div ref={containerRef} className={`relative inline-block ${className ?? ""}`}>
       <button
         type="button"
-        aria-label="Notifications"
+        ref={triggerRef}
+        aria-label={labels.notifications}
+        aria-describedby={countId}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         className={`relative ${buttonClassName ?? DEFAULT_BUTTON_CLASS}`}
@@ -100,10 +112,15 @@ export function InboxButton({
         </svg>
         {inbox.unreadCount > 0 ? (
           <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
-            {inbox.unreadCount > 99 ? "99+" : inbox.unreadCount}
+            {labels.badge(inbox.unreadCount)}
           </span>
         ) : null}
       </button>
+      {/* outside the button, so its accessible name stays the label alone;
+          the bell points at it as its description */}
+      <span id={countId} className="sr-only" aria-live="polite">
+        {inbox.unreadCount > 0 ? labels.unreadCount(inbox.unreadCount) : ""}
+      </span>
 
       {open ? (
         <div className="absolute right-0 z-50 mt-2">
@@ -111,6 +128,7 @@ export function InboxButton({
             inbox={inbox}
             onNavigate={onNavigate}
             renderItem={renderItem}
+            labels={labels}
             {...(locked ? {} : { view, onViewChange: setView })}
           />
         </div>

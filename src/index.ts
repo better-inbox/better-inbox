@@ -1,5 +1,6 @@
 import type { BetterAuthPlugin, InferOptionSchema } from "better-auth";
 import { mergeSchema } from "better-auth/db";
+import { deleteUserRows, organizationCleanupHook } from "./data";
 import type { DeliveryRule, InboxChannel, ShouldDeliver } from "./delivery";
 import { INBOX_ERROR_CODES } from "./error-codes";
 import {
@@ -49,6 +50,13 @@ export type InboxOptions<Channel extends string = string> = {
    * @default 100
    */
   batchSize?: number;
+  /**
+   * Delete a member's notifications in an organization when they're removed
+   * or leave, and an organization's when it's deleted. Turn off to keep them,
+   * e.g. for an audit trail; `deleteOrganizationData` still works.
+   * @default true
+   */
+  organizationCleanup?: boolean;
   schema?: InferOptionSchema<typeof schema>;
 };
 
@@ -99,18 +107,53 @@ export const inbox = <Channel extends string = string>(
       markAllRead: markAllRead(),
       unreadCount: unreadCount(opts),
     },
+    init: (context) => ({
+      options: {
+        databaseHooks: {
+          user: {
+            delete: {
+              // SQL cascades this through foreign keys; adapters without them
+              // (memory, MongoDB) would otherwise keep the rows forever
+              after: async (user) => {
+                try {
+                  await deleteUserRows(context, user.id);
+                } catch (error) {
+                  context.logger.error(
+                    `[@byo-oss/notifications] cleanup after deleting user ${user.id} failed`,
+                    error,
+                  );
+                }
+              },
+            },
+          },
+        },
+      },
+    }),
+    hooks: {
+      after: options.organizationCleanup === false ? [] : [organizationCleanupHook],
+    },
     $ERROR_CODES: INBOX_ERROR_CODES,
     options,
   } satisfies BetterAuthPlugin;
 };
 
-export type {
-  DeliveryContext,
-  DeliveryRule,
-  Duration,
-  InboxChannel,
-  ShouldDeliver,
-  SweepResult,
+export {
+  type DeliveryContext,
+  type DeliveryRule,
+  type Duration,
+  type InboxChannel,
+  PermanentDeliveryError,
+  type ShouldDeliver,
+  type SweepResult,
 } from "./delivery";
+export {
+  type AuthWithContext,
+  deleteMemberData,
+  deleteOrganizationData,
+  type ExportedDelivery,
+  type ExportedNotification,
+  type ExportNotificationsDataOptions,
+  exportNotificationsData,
+} from "./data";
 export { INBOX_ERROR_CODES } from "./error-codes";
 export type { DeliveryStatus, Notification, NotificationDelivery } from "./schema";

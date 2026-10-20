@@ -1,9 +1,10 @@
 export { InboxButton, type InboxButtonProps } from "./inbox-button";
+export { InboxPanel, type InboxPanelProps } from "./inbox-panel";
 export {
+  defaultInboxLabels,
   formatRelativeTime,
-  InboxPanel,
-  type InboxPanelProps,
-} from "./inbox-panel";
+  type InboxLabels,
+} from "./labels";
 export {
   useInbox,
   type InboxFetchClient,

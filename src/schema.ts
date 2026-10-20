@@ -6,8 +6,10 @@ export const schema = {
       userId: {
         type: "string",
         required: true,
-        references: { model: "user", field: "id" },
+        references: { model: "user", field: "id", onDelete: "cascade" },
       },
+      // no reference: the organization plugin is optional, and a reference to a
+      // missing table breaks migrations. deleteOrganizationData cleans up instead.
       organizationId: {
         type: "string",
         required: false,
@@ -52,12 +54,12 @@ export const schema = {
       notificationId: {
         type: "string",
         required: true,
-        references: { model: "notification", field: "id" },
+        references: { model: "notification", field: "id", onDelete: "cascade" },
       },
       userId: {
         type: "string",
         required: true,
-        references: { model: "user", field: "id" },
+        references: { model: "user", field: "id", onDelete: "cascade" },
       },
       type: {
         type: "string",
@@ -104,7 +106,7 @@ export const schema = {
         type: "string",
         required: true,
         unique: true,
-        references: { model: "user", field: "id" },
+        references: { model: "user", field: "id", onDelete: "cascade" },
       },
       lastSeenAt: {
         type: "date",

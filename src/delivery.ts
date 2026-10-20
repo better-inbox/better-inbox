@@ -1,4 +1,5 @@
 import type { AuthContext, User, Where } from "better-auth";
+import { findManyIn } from "./adapter";
 import type {
   InboxPresence,
   Notification,
@@ -18,10 +19,42 @@ export type DeliveryContext = {
   appUrl: string | undefined;
 };
 
+/**
+ * A delivery channel. Test one with `testChannel` from
+ * `@byo-oss/notifications/testing`.
+ */
 export type InboxChannel = {
-  /** Sends one notification. Throw to have the delivery retried. */
+  /**
+   * Sends one notification. Resolve once the provider accepted it; throw to
+   * have the delivery retried with backoff, until `maxAttempts`, after which
+   * it's marked `failed` with the error in `detail`. Throw a
+   * `PermanentDeliveryError` (or any error with `permanent: true`) for a send
+   * that can never succeed, such as a hard bounce, to fail it at once.
+   * Must not change `ctx`. Deliveries are at-least-once, so a send can repeat
+   * after a crash.
+   */
   deliver: (ctx: DeliveryContext) => Promise<void>;
 };
+
+/**
+ * Throw from a channel's `deliver` for a send that will never succeed (an
+ * invalid address, a hard bounce, a revoked token): the delivery is marked
+ * `failed` without retrying.
+ */
+export class PermanentDeliveryError extends Error {
+  readonly permanent = true;
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "PermanentDeliveryError";
+  }
+}
+
+// duck-typed too, so a channel needn't import this package's class
+const isPermanent = (error: unknown) =>
+  error instanceof PermanentDeliveryError ||
+  (typeof error === "object" &&
+    error !== null &&
+    (error as { permanent?: unknown }).permanent === true);
 
 export type DeliveryRule<Channel extends string = string> = {
   channel: Channel;
@@ -125,10 +158,11 @@ async function presentUserIds(
   now: Date,
 ) {
   if (userIds.length === 0) return new Set<string>();
-  const rows = await context.adapter.findMany<InboxPresence>({
+  const rows = await findManyIn<InboxPresence>(context, {
     model: "inboxPresence",
+    field: "userId",
+    values: userIds,
     where: [
-      { field: "userId", operator: "in", value: userIds },
       {
         field: "lastSeenAt",
         operator: "gte",
@@ -273,26 +307,17 @@ async function attemptDeliveries(
   const result = { sent: 0, skipped: 0, retrying: 0, failed: 0 };
   if (deliveries.length === 0) return result;
 
+  // batchSize may exceed findMany's default 100 rows and D1's 100 parameters
   const [notifications, users] = await Promise.all([
-    context.adapter.findMany<Notification>({
+    findManyIn<Notification>(context, {
       model: "notification",
-      where: [
-        {
-          field: "id",
-          operator: "in",
-          value: [...new Set(deliveries.map((d) => d.notificationId))],
-        },
-      ],
+      field: "id",
+      values: deliveries.map((d) => d.notificationId),
     }),
-    context.adapter.findMany<User>({
+    findManyIn<User>(context, {
       model: "user",
-      where: [
-        {
-          field: "id",
-          operator: "in",
-          value: [...new Set(deliveries.map((d) => d.userId))],
-        },
-      ],
+      field: "id",
+      values: deliveries.map((d) => d.userId),
     }),
   ]);
   const notificationsById = new Map(notifications.map((n) => [n.id, n]));
@@ -405,7 +430,7 @@ async function attemptDelivery(
     context.logger.error(
       `[@byo-oss/notifications] ${delivery.channel} delivery ${delivery.id} failed: ${detail}`,
     );
-    if (claimed.attempts >= options.maxAttempts) {
+    if (isPermanent(error) || claimed.attempts >= options.maxAttempts) {
       await finish({ status: "failed", detail });
       return "failed";
     }
