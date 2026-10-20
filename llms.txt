@@ -50,7 +50,7 @@ await deleteOrganizationData(auth, organizationId) // → { notifications }; for
 await deleteMemberData(auth, { userId, organizationId }) // → { notifications }
 // inside a better-auth transaction (runWithTransaction, e.g. a @better-auth/scim projection deprovisioning a member) both run in it and roll back with it
 // notify inside a transaction: notification + delivery rows join it; nothing is sent inside notify; the next processDeliveries sweep (after commit) sends due emails
-await exportNotificationsData(auth, { organizationId?, cursor?, limit: 500 }) // limit 1-1000; → { notifications: [{ ...row, userEmail, deliveries }], cursor }; loop until cursor is null; plain JSON, ISO dates; export with writes stopped (a delete mid-export can skip a row)
+await exportNotificationsData(auth, { organizationId?, cursor?, limit: 500 }) // limit 1-1000; → { notifications: [{ ...row, userEmail, deliveries }], cursor }; loop until cursor is null; plain JSON, ISO dates; pages follow createdAt, so a delete mid-export doesn't skip a row; a bare-number (offset) cursor from an earlier release throws, start over with no cursor
 
 ## Read/mutate (session-scoped to caller)
 

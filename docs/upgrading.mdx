@@ -7,6 +7,14 @@ order: 3
 
 Each section covers one change. Read the sections between your current version and the latest. The default docs describe the latest published release. Sections marked next describe main, which isn't published yet.
 
+<Next>
+## Export cursor
+
+`exportNotificationsData` now pages by `createdAt` and resumes after the last row it returned, instead of by offset. A row deleted mid-export can no longer make the next page skip one, so you don't need to stop writes first. Rows inserted mid-export are included if their `createdAt` is at or after the page you're on; a row backdated behind it (an import, say) is not.
+
+A cursor from an earlier release (a bare number) now throws, because it can't be resumed safely. Start the export again with no cursor, and keep one copy of each `id`, since rows exported before the restart come back.
+</Next>
+
 ## From better-inbox (0.7)
 
 The package was renamed from `better-inbox` to `@byo-oss/notifications` in 0.7. The API is the same. Change your imports:
