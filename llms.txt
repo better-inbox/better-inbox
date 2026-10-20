@@ -38,7 +38,7 @@ inbox({
   // presenceWindow: 120000, maxAttempts: 5, batchSize: 100
 });
 await auth.api.processDeliveries({}); // REQUIRED from a cron (every minute): sends delayed emails and retries → { sent, skipped, retrying, failed, hasMore }
-// The email is skipped if the notification is read, or seen (seenAt, set once a row is ≥50% on screen for 1s in a visible tab), unless cancelIfRead: false. throttle: at most one sent email per (user, type, channel) per window; extras skipped with detail "throttled" (best-effort across concurrent processes). Impersonated sessions (admin plugin) don't count as presence. Users with no unread-count poll within presenceWindow are "away": ifUnreadAfter emails go out right away (sendNowIfAway: false to always wait). Due-now emails send inside notify only with advanced.backgroundTasks.handler and <=25 rows; otherwise on the next sweep. At-least-once; atomic claim; backoff 1m doubling to 1h; rows in notificationDelivery (status pending|sending|sent|skipped|failed, detail).
+// The email is skipped if the notification is read, or seen (seenAt, set once a row is ≥50% on screen for 1s in a visible tab), unless cancelIfRead: false. throttle: at most one sent email per (user, type, channel) per window; extras skipped with detail "throttled" (best-effort across concurrent processes). Impersonated sessions (admin plugin) don't count as presence. Users with no unread-count poll within presenceWindow are "away": ifUnreadAfter emails go out right away (sendNowIfAway: false to always wait). Due-now emails send inside notify only with advanced.backgroundTasks.handler, <=25 rows and outside a transaction; otherwise on the next sweep. At-least-once; atomic claim; backoff 1m doubling to 1h; rows in notificationDelivery (status pending|sending|sent|skipped|failed, detail).
 // A channel is { deliver({ notification, user, appUrl }) } that throws on failure (retries until maxAttempts) and doesn't mutate its input. throw new PermanentDeliveryError(msg) (or an error with permanent: true) to fail at once, e.g. a hard bounce.
 // Test a custom channel (vitest, ESM only): import { testChannel, deliveryContext } from "@byo-oss/notifications/testing"; testChannel(() => myChannel(fake), { failing: () => myChannel(rejecting), permanentlyFailing?: () => myChannel(bouncing) })
 
@@ -49,6 +49,7 @@ await auth.api.processDeliveries({}); // REQUIRED from a cron (every minute): se
 await deleteOrganizationData(auth, organizationId) // → { notifications }; for deletes made any other way
 await deleteMemberData(auth, { userId, organizationId }) // → { notifications }
 // inside a better-auth transaction (runWithTransaction, e.g. a @better-auth/scim projection deprovisioning a member) both run in it and roll back with it
+// notify inside a transaction: notification + delivery rows join it; nothing is sent inside notify; the next processDeliveries sweep (after commit) sends due emails
 await exportNotificationsData(auth, { organizationId?, cursor?, limit: 500 }) // limit 1-1000; → { notifications: [{ ...row, userEmail, deliveries }], cursor }; loop until cursor is null; plain JSON, ISO dates; export with writes stopped (a delete mid-export can skip a row)
 
 ## Read/mutate (session-scoped to caller)

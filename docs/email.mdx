@@ -76,6 +76,10 @@ export async function GET() {
 
 Emails that are due right away (an away user, a rule with no delay) are sent inside `notify` when better-auth has a background task handler (`advanced: { backgroundTasks: { handler: waitUntil } }`) and the batch is 25 or fewer. Otherwise, including large org fan-outs, they go out on the next sweep.
 
+<Next>
+`notify` called inside a better-auth transaction (`runWithTransaction`) never sends inside the call. Its delivery rows commit with the transaction, and the next sweep sends them once it has committed. An email is never sent for a notification whose transaction rolls back, so the sweep must be running for these emails to go out.
+</Next>
+
 Each sweep handles `batchSize` deliveries (100 by default) and returns `hasMore` when more are due.
 
 ## Delivery guarantee

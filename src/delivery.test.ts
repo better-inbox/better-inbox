@@ -1,3 +1,4 @@
+import { runWithTransaction } from "@better-auth/core/context";
 import { admin } from "better-auth/plugins";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeliveryContext, InboxChannel } from "./delivery";
@@ -778,5 +779,98 @@ describe("options", () => {
     await auth.api.unreadCount({ headers: alice.headers, query: {} });
     const ctx = await auth.$context;
     expect(await ctx.adapter.findMany({ model: "inboxPresence" })).toHaveLength(0);
+  });
+});
+
+describe("notify inside a better-auth transaction", () => {
+  // due now, so without a transaction notify would send it inside the call
+  function sendNow() {
+    const tasks: Promise<unknown>[] = [];
+    const email = fakeChannel();
+    const auth = createTestAuthWithOrg(
+      {
+        channels: { email: email.channel },
+        routes: { "order.shipped": [{ channel: "email" }] },
+      },
+      { advanced: { backgroundTasks: { handler: (p) => void tasks.push(p) } } },
+    );
+    return { auth, email, tasks };
+  }
+  const inTransaction = async (
+    auth: { $context: Promise<any> },
+    fn: () => Promise<unknown>,
+  ) => runWithTransaction((await auth.$context).adapter, fn);
+  const countRows = async (auth: { $context: Promise<any> }, model: string) =>
+    (await auth.$context).adapter.count({ model });
+  const shipped = { type: "order.shipped", title: "Your order shipped" };
+
+  it("commits the notification and its delivery with the caller's transaction", async () => {
+    const { auth, email, tasks } = sendNow();
+    const alice = await signUpUser(auth, "alice@example.com");
+    tasks.length = 0;
+
+    await inTransaction(auth, () =>
+      auth.api.notify({ body: { userId: alice.user.id, ...shipped } }),
+    );
+
+    expect(await countRows(auth, "notification")).toBe(1);
+    expect(await countRows(auth, "notificationDelivery")).toBe(1);
+    // nothing is sent while the transaction is open: the sweep sends it after the commit
+    expect(tasks).toHaveLength(0);
+    expect(email.channel.deliver).not.toHaveBeenCalled();
+    expect(await auth.api.processDeliveries({})).toMatchObject({ sent: 1 });
+    expect(email.sent).toHaveLength(1);
+  });
+
+  it("rolls back with the caller's transaction and never sends", async () => {
+    const { auth, email, tasks } = sendNow();
+    const alice = await signUpUser(auth, "alice@example.com");
+    tasks.length = 0;
+
+    await expect(
+      inTransaction(auth, async () => {
+        await auth.api.notify({ body: { userId: alice.user.id, ...shipped } });
+        throw new Error("directory write failed");
+      }),
+    ).rejects.toThrow("directory write failed");
+
+    expect(await countRows(auth, "notification")).toBe(0);
+    expect(await countRows(auth, "notificationDelivery")).toBe(0);
+    expect(tasks).toHaveLength(0);
+    expect(email.channel.deliver).not.toHaveBeenCalled();
+    expect(await auth.api.processDeliveries({})).toMatchObject({ sent: 0 });
+  });
+
+  it("fans an organization notify out with the caller's transaction, and rolls it back", async () => {
+    const { auth, email, tasks } = sendNow();
+    const alice = await signUpUser(auth, "alice@example.com");
+    const bob = await signUpUser(auth, "bob@example.com");
+    const org = await auth.api.createOrganization({
+      headers: alice.headers,
+      body: { name: "acme", slug: "acme" },
+    });
+    if (!org) throw new Error("org creation failed");
+    await auth.api.addMember({
+      body: { userId: bob.user.id, organizationId: org.id, role: "member" },
+    });
+    tasks.length = 0;
+    const fanOut = () =>
+      auth.api.notify({ body: { organizationId: org.id, ...shipped } });
+
+    await expect(
+      inTransaction(auth, async () => {
+        await fanOut();
+        throw new Error("directory write failed");
+      }),
+    ).rejects.toThrow("directory write failed");
+    expect(await countRows(auth, "notification")).toBe(0);
+    expect(await countRows(auth, "notificationDelivery")).toBe(0);
+    expect(email.channel.deliver).not.toHaveBeenCalled();
+
+    await inTransaction(auth, fanOut);
+    expect(await countRows(auth, "notification")).toBe(2);
+    expect(await countRows(auth, "notificationDelivery")).toBe(2);
+    expect(tasks).toHaveLength(0);
+    expect(await auth.api.processDeliveries({})).toMatchObject({ sent: 2 });
   });
 });

@@ -26,6 +26,10 @@ Returns `{ count, notifications }`.
 
 See [Notify an organization](/docs/notifications/organizations) for the fan-out rules.
 
+<Next>
+Inside a better-auth transaction (`runWithTransaction`, as in a `@better-auth/scim` projection), the notification and delivery rows are written in that transaction and commit or roll back with it. Nothing is sent inside the call: the emails go out from `processDeliveries` after the commit.
+</Next>
+
 ### `auth.api.processDeliveries`
 
 Sends due email deliveries. Call it from a cron. The optional body is `{ limit }`, which overrides `batchSize`.
