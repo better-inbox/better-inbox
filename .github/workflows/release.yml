@@ -41,8 +41,18 @@ jobs:
       - run: bun run build
 
       # no token: npmjs.com trusts this repo + workflow over OIDC, and publishing
-      # that way attaches provenance on its own
-      - run: npm publish
+      # that way attaches provenance on its own. A new package name has no
+      # trusted publisher until its first (manual) publish, so a version that's
+      # already on npm is skipped and the release below still gets created
+      - name: Publish
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version is already on npm, skipping publish"
+          else
+            npm publish
+          fi
 
       - run: gh release create "$GITHUB_REF_NAME" --generate-notes
         env:

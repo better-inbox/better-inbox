@@ -1,5 +1,5 @@
-import type { InboxPanelProps } from "better-inbox/react";
-import { InboxPanel } from "better-inbox/react";
+import type { InboxPanelProps } from "@byo-oss/notifications/react";
+import { InboxPanel } from "@byo-oss/notifications/react";
 import {
   AbsoluteFill,
   Easing,
@@ -311,7 +311,7 @@ const OutroScene = () => {
           <Bell size={30} />
         </span>
         <span className="text-5xl font-semibold tracking-tight">
-          better-inbox
+          @byo-oss/notifications
         </span>
       </div>
       <div
@@ -322,7 +322,7 @@ const OutroScene = () => {
         }}
       >
         <span className="text-muted-foreground">$</span> npm install
-        better-inbox
+        @byo-oss/notifications
       </div>
       <div
         className="text-center"
@@ -332,7 +332,7 @@ const OutroScene = () => {
           In-app notifications for better-auth apps — in your database.
         </p>
         <p className="mt-3 text-base text-muted-foreground/70">
-          github.com/better-inbox
+          github.com/byo-oss/notifications
         </p>
       </div>
     </AbsoluteFill>

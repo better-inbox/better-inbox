@@ -62,12 +62,12 @@ export const inbox = <Channel extends string = string>(
     for (const rule of rules) {
       if (!channels[rule.channel]) {
         throw new Error(
-          `[better-inbox] routes["${type}"] uses channel "${rule.channel}", which is not in channels`,
+          `[@byo-oss/notifications] routes["${type}"] uses channel "${rule.channel}", which is not in channels`,
         );
       }
       if (seen.has(rule.channel)) {
         throw new Error(
-          `[better-inbox] routes["${type}"] lists channel "${rule.channel}" more than once`,
+          `[@byo-oss/notifications] routes["${type}"] lists channel "${rule.channel}" more than once`,
         );
       }
       seen.add(rule.channel);

@@ -1,12 +1,14 @@
-# better-inbox
+# @byo-oss/notifications
+
+Formerly [`better-inbox`](https://www.npmjs.com/package/better-inbox). Same API: change your imports.
 
 In-app notifications for [better-auth](https://better-auth.com) apps. One plugin, one migration, one component — notifications live in **your** database, addressed to **your** users.
 
 ```
-npm install better-inbox
+npm install @byo-oss/notifications
 ```
 
-![Stripe webhook fires, the bell rings, and the inbox panel opens with the payment-failed notification](https://raw.githubusercontent.com/better-inbox/better-inbox/main/.github/demo.gif)
+![Stripe webhook fires, the bell rings, and the inbox panel opens with the payment-failed notification](https://raw.githubusercontent.com/byo-oss/notifications/main/.github/demo.gif)
 
 - **A better-auth plugin, not a platform.** No services to deploy, no dashboard SaaS. The `notification` table lives in your own database via better-auth's adapter (drizzle, prisma, kysely — whatever you already use).
 - **Addressed to users, not email addresses.** `notify({ userId })` uses your better-auth user ids. Delete a user, their notifications cascade.
@@ -23,7 +25,7 @@ npm install better-inbox
 ```ts
 // lib/auth.ts
 import { betterAuth } from "better-auth";
-import { inbox } from "better-inbox";
+import { inbox } from "@byo-oss/notifications";
 
 export const auth = betterAuth({
   // ...your existing config
@@ -44,7 +46,7 @@ npx @better-auth/cli migrate --config lib/auth.ts   # or: generate, for drizzle/
 ```ts
 // lib/auth-client.ts
 import { createAuthClient } from "better-auth/react";
-import { inboxClient } from "better-inbox/client";
+import { inboxClient } from "@byo-oss/notifications/client";
 
 export const authClient = createAuthClient({
   plugins: [inboxClient()],
@@ -55,7 +57,7 @@ export const authClient = createAuthClient({
 
 ```tsx
 "use client";
-import { InboxButton } from "better-inbox/react";
+import { InboxButton } from "@byo-oss/notifications/react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 
@@ -78,7 +80,7 @@ Tailwind v4 skips `node_modules` when it scans for classes, so point it at the p
 
 ```css
 @import "tailwindcss";
-@source "../node_modules/better-inbox/dist"; /* path relative to this CSS file */
+@source "../node_modules/@byo-oss/notifications/dist"; /* path relative to this CSS file */
 ```
 
 `InboxButton` renders its own `<button>`, so don't wrap it in another one. To match your design system's trigger, pass `buttonClassName`; it replaces the default look. With shadcn:
@@ -156,15 +158,15 @@ Fan-out is capped at 1,000 members by default (`inbox({ maxFanout })` to change)
 
 ## Email if unread
 
-Route a notification type to email, and better-inbox emails it only if nobody has read or seen it in the app first. The in-app row is always written; email is a follow-up to it.
+Route a notification type to email, and it is emailed only if nobody has read or seen it in the app first. The in-app row is always written; email is a follow-up to it.
 
 ```
 npm install @wraps.dev/email
 ```
 
 ```ts
-import { inbox } from "better-inbox";
-import { wrapsEmail } from "better-inbox/wraps";
+import { inbox } from "@byo-oss/notifications";
+import { wrapsEmail } from "@byo-oss/notifications/wraps";
 
 inbox({
   appUrl: "https://app.acme.com", // turns href "/settings/billing" into a link
@@ -211,7 +213,7 @@ Every delivery is a row in the `notificationDelivery` table (`status`: `pending`
 
 ## API
 
-### Server (`better-inbox`)
+### Server (`@byo-oss/notifications`)
 
 | Endpoint | Access | Description |
 |----------|--------|-------------|
@@ -225,7 +227,7 @@ Every delivery is a row in the `notificationDelivery` table (`status`: `pending`
 
 Every session endpoint is scoped to the caller — users can only ever see and mutate their own notifications.
 
-### React (`better-inbox/react`)
+### React (`@byo-oss/notifications/react`)
 
 - `<InboxButton client={authClient} />` — bell + badge + panel. Props: `onNavigate`, `renderItem`, `pollInterval` (default 30s; unread count only, paused while the tab is hidden), `refreshOnFocus` (default `true`; full refresh when the tab becomes visible), `filter`, `organizationId`, `className` (the wrapper), `buttonClassName` (replaces the trigger's default classes). The visibility refresh is skipped when the data is under 5s old; opening the panel always refreshes. Opens on an **Unread** tab (fetched server-side with `filter: "unread"`) with **All** second; passing `filter` locks the list and hides the tabs.
 - `useInbox(client, options)` — build your own UI: `{ notifications, unreadCount, isLoading, hasMore, loadMore, markRead, markSeen, markAllRead, refresh, refreshIfStale }`. In a custom UI, use `const seenRef = useSeenOnView(markSeen)` and put `ref={seenRef(n.id)}` on each unread row, so only rows people actually look at cancel pending emails. It uses IntersectionObserver and marks nothing where that's missing. Options: `pollInterval`, `pageSize`, `filter`, `organizationId`, `refreshOnFocus`. `refresh()` always fetches (concurrent calls share one request); `refreshIfStale()` skips if the data is under 5s old.

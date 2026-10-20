@@ -1,6 +1,6 @@
-# better-inbox demo
+# @byo-oss/notifications demo
 
-Next.js + better-auth (SQLite) + organization plugin + better-inbox.
+Next.js + better-auth (SQLite) + organization plugin + @byo-oss/notifications.
 
 ```
 bun install

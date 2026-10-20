@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "better-inbox",
+      "name": "@byo-oss/notifications",
       "dependencies": {
         "zod": "^4.4.3",
       },
@@ -21,10 +21,12 @@
         "vitest": "^4.1.10",
       },
       "peerDependencies": {
+        "@wraps.dev/email": ">=0.15.0",
         "better-auth": "^1.6.23",
         "react": ">=18",
       },
       "optionalPeers": [
+        "@wraps.dev/email",
         "react",
       ],
     },

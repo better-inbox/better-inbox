@@ -403,7 +403,7 @@ async function attemptDelivery(
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     context.logger.error(
-      `[better-inbox] ${delivery.channel} delivery ${delivery.id} failed: ${detail}`,
+      `[@byo-oss/notifications] ${delivery.channel} delivery ${delivery.id} failed: ${detail}`,
     );
     if (claimed.attempts >= options.maxAttempts) {
       await finish({ status: "failed", detail });
