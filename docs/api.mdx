@@ -76,3 +76,7 @@ These are functions, not endpoints. Use them in your own scripts and hooks.
 | `deleteMemberData(auth, { userId, organizationId })` | Deletes one member's notifications in one org. Returns `{ notifications }` |
 | `exportNotificationsData(auth, { organizationId?, cursor?, limit? })` | One page (500 by default) of notifications, each with its `deliveries` and the user's `userEmail`, as plain JSON with ISO dates. Returns `{ notifications, cursor }`. Pass `cursor` back until it's `null`. A row deleted mid-export (a member leaving, say) can make the next page skip one, so export with writes stopped |
 
+<Next>
+`exportNotificationsData` pages by `createdAt` and resumes after the last row it returned, so a row deleted mid-export no longer makes the next page skip one. The cursor is still opaque. A cursor from an earlier release (a bare number) throws: start over with no cursor and keep one copy of each `id`. See [Upgrading](/docs/notifications/upgrading#export-cursor).
+</Next>
+

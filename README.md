@@ -281,7 +281,7 @@ Server-only functions (not endpoints), for your own scripts and hooks:
 |----------|-------------|
 | `deleteOrganizationData(auth, organizationId)` | Deletes an org's notifications and their deliveries → `{ notifications }` (the count) |
 | `deleteMemberData(auth, { userId, organizationId })` | Deletes one member's notifications in one org → `{ notifications }` |
-| `exportNotificationsData(auth, { organizationId?, cursor?, limit? })` | One page (500 by default) of notifications, each with its `deliveries` and the user's `userEmail`, as plain JSON with ISO dates → `{ notifications, cursor }`. Pass `cursor` back until it's `null`. A row deleted mid-export (a member leaving, say) can make the next page skip one, so export with writes stopped |
+| `exportNotificationsData(auth, { organizationId?, cursor?, limit? })` | One page (500 by default) of notifications, each with its `deliveries` and the user's `userEmail`, as plain JSON with ISO dates → `{ notifications, cursor }`. Pass `cursor` back until it's `null`. Pages follow `createdAt`, so a row deleted mid-export (a member leaving, say) doesn't make the next page skip one. An offset cursor from an earlier release throws; start over with no cursor |
 
 ### React (`@byo-oss/notifications/react`)
 

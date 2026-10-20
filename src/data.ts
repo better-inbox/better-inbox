@@ -208,13 +208,77 @@ const serialize = <T extends object>(row: T): Serialized<T> =>
   ) as Serialized<T>;
 
 /**
+ * The export cursor: where the last page stopped, as a `createdAt` plus the ids
+ * already exported with exactly that `createdAt`. Sorting and comparing dates
+ * gives the same order on every adapter, which comparing string ids doesn't
+ * (the memory adapter sorts with localeCompare and compares with `>`).
+ */
+type ExportCursor = { t: string; ids: string[] };
+
+const ENCODED_CURSOR = /^[A-Za-z0-9_-]+$/;
+
+function encodeCursor(cursor: ExportCursor): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(cursor));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+const timeOf = (n: Pick<Notification, "createdAt">) =>
+  new Date(n.createdAt).getTime();
+
+// the last row returned sets the position; ids already exported at that same
+// createdAt (from an earlier page) stay in the list, since the window still
+// holds them
+function cursorAfter(
+  rows: Notification[],
+  from: Date | null,
+  exported: Set<string>,
+): ExportCursor {
+  const last = timeOf(rows[rows.length - 1]!);
+  const ids = rows.filter((n) => timeOf(n) === last).map((n) => n.id);
+  if (from?.getTime() === last) ids.push(...exported);
+  return { t: new Date(last).toISOString(), ids };
+}
+
+function decodeCursor(value: string): ExportCursor | null {
+  if (!ENCODED_CURSOR.test(value)) return null;
+  try {
+    const binary = atob(value.replace(/-/g, "+").replace(/_/g, "/"));
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    const parsed = JSON.parse(new TextDecoder().decode(bytes));
+    if (
+      typeof parsed?.t === "string" &&
+      !Number.isNaN(Date.parse(parsed.t)) &&
+      Array.isArray(parsed.ids) &&
+      parsed.ids.every((id: unknown) => typeof id === "string")
+    ) {
+      return parsed as ExportCursor;
+    }
+  } catch {
+    // not base64 or not JSON: the caller reports it
+  }
+  return null;
+}
+
+/**
  * Exports every notification (or one organization's) with its deliveries and
  * the user's email, a page at a time, as plain JSON. Server-only; for moving
- * to another tool or keeping an archive. Pages run in id order, and the cursor
- * is opaque. A row deleted mid-export (a member leaving, say) shifts later
- * rows back a page, so one can be skipped: export with writes stopped, or
- * export twice and compare.
+ * to another tool or keeping an archive.
+ *
+ * Pages follow `createdAt`, and the cursor names the last row returned, so a
+ * row deleted mid-export (a member leaving, say) can't make a later row skip.
+ * Rows that share a `createdAt` have no fixed order between pages, but none is
+ * skipped. A row inserted mid-export is picked up if its `createdAt` is at or
+ * after the page you're on; one backdated behind it (an import, say) is not.
  * Presence (`inboxPresence`) isn't exported; it's a minute-level heartbeat.
+ *
+ * A cursor from an earlier release (a bare offset) is rejected: it can't be
+ * resumed without skipping rows. Start over with no cursor and keep one copy
+ * of each `id`.
  */
 export async function exportNotificationsData(
   auth: AuthWithContext,
@@ -234,21 +298,36 @@ export async function exportNotificationsData(
     if (!options.organizationId) throw fail("organizationId is empty");
     where.push({ field: "organizationId", value: options.organizationId });
   }
-  // an offset, not "id > last": adapters disagree on how strings sort (the
-  // memory adapter sorts with localeCompare but compares with >)
-  const offset = options.cursor ? Number.parseInt(options.cursor, 10) : 0;
-  if (!Number.isInteger(offset) || offset < 0) {
-    throw fail(`invalid cursor: ${options.cursor}`);
+  let after: ExportCursor | null = null;
+  if (options.cursor) {
+    if (/^\d+$/.test(options.cursor)) {
+      throw fail(
+        "cursor is an offset from an earlier release and can't be resumed safely; start over with no cursor and keep one copy of each id",
+      );
+    }
+    after = decodeCursor(options.cursor);
+    if (!after) throw fail(`invalid cursor: ${options.cursor}`);
   }
+  const from = after ? new Date(after.t) : null;
+  if (from) where.push({ field: "createdAt", operator: "gte", value: from });
+  // ids already exported at `from` come back in the window too, so the window
+  // always holds `limit + 1` rows not yet exported when that many remain
+  const exported = new Set(after?.ids ?? []);
   const page = await adapter.findMany<Notification>({
     model: "notification",
     where,
-    limit: limit + 1,
-    offset,
-    sortBy: { field: "id", direction: "asc" },
+    limit: limit + 1 + exported.size,
+    sortBy: { field: "createdAt", direction: "asc" },
   });
-  const rows = page.slice(0, limit);
-  if (rows.length === 0) return { notifications: [], cursor: null };
+  const fresh = page.filter((n) => !exported.has(n.id));
+  if (fresh.length === 0) return { notifications: [], cursor: null };
+  // the first `limit` unexported rows, so nothing unexported sorts before the
+  // last one returned
+  const rows = fresh.slice(0, limit);
+  rows.sort(
+    (a, b) =>
+      timeOf(a) - timeOf(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
 
   const [users, deliveries] = await Promise.all([
     findManyIn<{ id: string; email: string }>(adapter, {
@@ -273,6 +352,9 @@ export async function exportNotificationsData(
         .filter((d) => d.notificationId === notification.id)
         .map(serialize),
     })),
-    cursor: page.length > limit ? String(offset + limit) : null,
+    cursor:
+      fresh.length > limit
+        ? encodeCursor(cursorAfter(rows, from, exported))
+        : null,
   };
 }
