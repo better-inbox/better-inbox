@@ -39,3 +39,7 @@ markSeen: ({ ids }) => authClient.inbox.markSeen({ ids })
 - Deleting a user now also removes their rows on adapters without foreign keys (memory, MongoDB).
 - New, additive: `exportNotificationsData`, `PermanentDeliveryError`, `labels` (including `badge`), `organizationCleanup`, and `@byo-oss/notifications/testing`, which needs vitest (an optional peer).
 
+## 0.8.1
+
+- The package ships an agent skill, `byo-notifications`, in `skills/`. Install it with `npx skills add byo-oss/notifications`, or run `npx skills sync` to pick it up from `node_modules`. See [Set up with a coding agent](/docs/notifications/quickstart#set-up-with-a-coding-agent). Nothing else changed.
+
