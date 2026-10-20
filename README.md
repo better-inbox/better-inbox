@@ -156,6 +156,21 @@ await auth.api.notify({
 
 Fan-out is capped at 1,000 members by default (`inbox({ maxFanout })` to change). Over the cap, `notify` throws instead of hammering your database.
 
+### When a member leaves or an organization is deleted
+
+The plugin cleans up after the organization plugin's own endpoints: `/organization/delete` deletes the org's notifications, and `/organization/remove-member` and `/organization/leave` delete that member's notifications in that org. Their notifications elsewhere stay. Deliveries go with their notifications. Deleting a user cascades to all of their rows.
+
+If you delete organizations or members some other way (a script, an admin tool, a direct database write), call the cleanup yourself:
+
+```ts
+import { deleteMemberData, deleteOrganizationData } from "@byo-oss/notifications";
+
+await deleteOrganizationData(auth, organizationId);
+await deleteMemberData(auth, { userId, organizationId });
+```
+
+`organizationId` has no foreign key, because the organization plugin is optional. These functions do what a cascade would.
+
 ## Email if unread
 
 Route a notification type to email, and it is emailed only if nobody has read or seen it in the app first. The in-app row is always written; email is a follow-up to it.
@@ -227,12 +242,84 @@ Every delivery is a row in the `notificationDelivery` table (`status`: `pending`
 
 Every session endpoint is scoped to the caller — users can only ever see and mutate their own notifications.
 
+Server-only functions (not endpoints), for your own scripts and hooks:
+
+| Function | Description |
+|----------|-------------|
+| `deleteOrganizationData(auth, organizationId)` | Deletes an org's notifications and their deliveries → `{ notifications }` (the count) |
+| `deleteMemberData(auth, { userId, organizationId })` | Deletes one member's notifications in one org → `{ notifications }` |
+| `exportNotificationsData(auth, { organizationId?, cursor?, limit? })` | One page (500 by default) of notifications, each with its `deliveries` and the user's `userEmail`, as plain JSON with ISO dates → `{ notifications, cursor }`. Pass `cursor` back until it's `null`. Export once writes stop: rows written mid-export can shift between pages |
+
 ### React (`@byo-oss/notifications/react`)
 
 - `<InboxButton client={authClient} />` — bell + badge + panel. Props: `onNavigate`, `renderItem`, `pollInterval` (default 30s; unread count only, paused while the tab is hidden), `refreshOnFocus` (default `true`; full refresh when the tab becomes visible), `filter`, `organizationId`, `className` (the wrapper), `buttonClassName` (replaces the trigger's default classes). The visibility refresh is skipped when the data is under 5s old; opening the panel always refreshes. Opens on an **Unread** tab (fetched server-side with `filter: "unread"`) with **All** second; passing `filter` locks the list and hides the tabs.
 - `useInbox(client, options)` — build your own UI: `{ notifications, unreadCount, isLoading, hasMore, loadMore, markRead, markSeen, markAllRead, refresh, refreshIfStale }`. In a custom UI, use `const seenRef = useSeenOnView(markSeen)` and put `ref={seenRef(n.id)}` on each unread row, so only rows people actually look at cancel pending emails. It uses IntersectionObserver and marks nothing where that's missing. Options: `pollInterval`, `pageSize`, `filter`, `organizationId`, `refreshOnFocus`. `refresh()` always fetches (concurrent calls share one request); `refreshIfStale()` skips if the data is under 5s old.
 - `filter: "unread"` fetches only unread rows, so a page is a full page — `useInbox(authClient, { filter: "unread", pageSize: 5 })` yields five unread notifications instead of five rows you then filter down to however many are unread. Rows you mark read stay in the list until the next `refresh()`, and `loadMore()` accounts for them when paging.
 - `<InboxPanel inbox={useInbox(...)} />` — the panel without the bell. Pass `view` + `onViewChange` to control its tabs; uncontrolled it defaults to Unread.
+- `labels` on `InboxButton` and `InboxPanel` replaces any of the English strings: `notifications` (the bell's accessible name), `unread`, `all`, `markAllRead`, `empty`, `loadMore`, `unreadCount(count)` (announced to screen readers when the count changes) and `relativeTime(date)`. Keys you leave out keep `defaultInboxLabels`.
+
+  ```tsx
+  <InboxButton client={authClient} labels={{ unread: "Ungelesen", all: "Alle", markAllRead: "Alle gelesen" }} />
+  ```
+
+### Testing (`@byo-oss/notifications/testing`)
+
+Writing your own channel (push, SMS, Slack)? Run the `InboxChannel` contract against it with vitest:
+
+```ts
+import { testChannel } from "@byo-oss/notifications/testing";
+
+testChannel(() => slackChannel({ fetch: fakeFetch }), {
+  failing: () => slackChannel({ fetch: failingFetch }), // checks that a failed send throws
+});
+```
+
+It checks that `deliver` resolves for full and minimal notifications and for relative and absolute links, doesn't change its input, and throws when the send fails. Throwing is what makes a delivery retry, and every throw retries until `maxAttempts`. `deliveryContext(overrides)` builds a sample context for your own tests. The built-in Wraps channel runs the same suite.
+
+## Schema
+
+These tables are a public contract: a change that breaks reading existing rows is a major release. Rename tables or fields with the `schema` option. Nothing is added to better-auth's own tables.
+
+**`notification`**: one row per person per notification.
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `id` | string | |
+| `userId` | string → `user.id`, cascade | Whose inbox it's in |
+| `organizationId` | string, optional | The org it was sent in. No foreign key, because the organization plugin is optional |
+| `type` | string | Your event name, e.g. `billing.payment_failed`. Picks the delivery routes |
+| `title` | string | |
+| `body` | string, optional | |
+| `href` | string, optional | Where clicking it goes. Emails join a relative path onto `appUrl` |
+| `data` | json, optional | Anything else you passed to `notify` |
+| `read` | boolean | Clicked or marked read |
+| `seenAt` | date, optional | When it was first on screen. Cancels pending "if unread" emails |
+| `createdAt` | date | |
+
+**`notificationDelivery`**: one row per notification per routed channel.
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `id` | string | |
+| `notificationId` | string → `notification.id`, cascade | |
+| `userId` | string → `user.id`, cascade | |
+| `type` | string | The notification's type, for throttling |
+| `channel` | string | The channel's name in `channels` |
+| `status` | string | `pending`, `sending`, `sent`, `skipped` or `failed` |
+| `scheduledFor` | date | When it's due |
+| `attempts` | number | Sends tried |
+| `claimedAt` | date, optional | When a sweep claimed it. A claim older than five minutes is retried |
+| `sentAt` | date, optional | |
+| `detail` | string, optional | Why it was skipped, or the last error |
+| `createdAt` | date | |
+
+**`inboxPresence`**: when each user last polled the inbox, so "email if unread" knows who's in the app.
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `id` | string | |
+| `userId` | string → `user.id`, cascade, unique | |
+| `lastSeenAt` | date | Written at most once a minute |
 
 ## Performance note
 
@@ -250,6 +337,12 @@ index("notification_delivery_due_idx").on(table.status, table.scheduledFor)
 index("notification_delivery_throttle_idx").on(table.userId, table.type, table.channel, table.sentAt)
 ```
 
+## Upgrading to 0.8
+
+- Every reference now declares `onDelete: "cascade"`: `notification.userId`, `notificationDelivery.notificationId`, `notificationDelivery.userId` and `inboxPresence.userId`. better-auth's own `migrate` already cascaded. If you generate migrations with drizzle or prisma, regenerate and apply them so your foreign keys match.
+- The plugin now deletes notifications when an organization is deleted or a member is removed or leaves (see [above](#when-a-member-leaves-or-an-organization-is-deleted)). If you wired your own cleanup for this, you can remove it.
+- The panel's tabs render "Unread" and "All" as text, instead of `unread` and `all` capitalized by CSS. Tests that match the tab text exactly need the capitalized form.
+
 ## Upgrading to 0.6
 
 0.6 adds a `seenAt` column to `notification` and two tables, `notificationDelivery` and `inboxPresence`. Re-run `migrate` (or `generate`) after upgrading, even if you don't use email.
@@ -259,6 +352,38 @@ If you hand `useInbox` your own client object rather than `authClient`, add `mar
 ## What this is not (yet)
 
 In-app first: email follows a notification that went unread, and it uses the inbox's own read state to decide. Notification preferences, push, SMS, digests and realtime websockets aren't here yet. Polling + refetch on tab visibility covers the badge honestly. If you need full multi-channel delivery pipelines today, look at [Novu](https://novu.co) or [betternotify](https://github.com/better-notify/better-notify).
+
+## Outgrowing this
+
+You've outgrown it when you need push, SMS or chat next to in-app, a preference center and digests across channels, non-engineers editing notification templates, or realtime delivery to thousands of concurrent users. The usual next stops are [Knock](https://knock.app), [Novu](https://novu.co) and [Courier](https://www.courier.com).
+
+Neither Knock nor Novu documents a way to import past notifications: their messages come from triggering a workflow, stamped with the current time and unread. So moving is a forward cutover, and your `notification` table stays the archive.
+
+| Here | Knock | Novu |
+|------|-------|------|
+| `user.id`, `user.email` | user `id`, `email` ([bulk identify](https://docs.knock.app/api-reference/users/bulk/identify), 1,000 per call) | subscriber `subscriberId`, `email` ([bulk create](https://docs.novu.co/platform/concepts/subscribers), 500 per call) |
+| `organizationId` | [tenant](https://docs.knock.app/concepts/tenants) `id`, passed on each trigger | [tenant context](https://docs.novu.co/platform/concepts/tenants) `{ type: "tenant", id }` |
+| `type` | [workflow](https://docs.knock.app/concepts/workflows) key | [`workflowId`](https://docs.novu.co/platform/concepts/workflows), conventionally lowercase with hyphens, so `billing.payment_failed` may need renaming |
+| `title`, `body`, `href`, `data` | trigger `data`, rendered by the workflow's in-app template | trigger `payload` |
+| `read`, `seenAt` | [message statuses](https://docs.knock.app/send-notifications/message-statuses), for messages it created | read and seen, for messages it created |
+| `createdAt` | not settable | not settable |
+| `notificationDelivery`, `inboxPresence` | no equivalent; stays here | no equivalent; stays here |
+
+1. **Run both.** Keep calling `auth.api.notify`, and also trigger the new tool's workflow for one `type`, behind a flag.
+2. **Backfill people.** Bulk-import users, and organizations as tenants. `exportNotificationsData` gives you each row's `userId`, `organizationId` and `userEmail` if you'd rather read them from here.
+3. **Cut over one `type` at a time.** Check it in the tool's activity log, then stop calling `notify` for that type and point the bell at the tool's feed component.
+4. **Keep history readable.** Leave the old inbox reachable (an "Earlier" tab, or an export into your own archive) for as long as people need it.
+5. **Uninstall** once nothing calls `notify` and nothing reads the old inbox.
+
+Knock is the more direct fit: its tenants take `organizationId` as-is, and it documents setting message status through its API. Novu's [in-house migration guide](https://docs.novu.co/guides/migrate-from-in-house-to-novu) covers moving triggers one workflow at a time.
+
+## Uninstall
+
+1. Remove `inbox()` from `betterAuth({ plugins })`, `inboxClient()` from your auth client, and `InboxButton` / `useInbox` from your UI.
+2. Remove the Tailwind `@source` line and the cron that calls `processDeliveries`.
+3. Drop the tables, the one with foreign keys to `notification` first: `notificationDelivery`, then `inboxPresence` and `notification`. Use the names your adapter or the `schema` option gave them.
+
+The plugin adds no columns to better-auth's own tables (`user`, `organization`, `member`), so there's nothing else to clean up.
 
 ## License
 
