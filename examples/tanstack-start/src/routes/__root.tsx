@@ -7,7 +7,7 @@ import {
   Scripts,
   useRouter,
 } from "@tanstack/react-router";
-import { InboxButton } from "better-inbox/react";
+import { InboxButton } from "@byo-oss/notifications/react";
 import type { ReactNode } from "react";
 import { authClient } from "../lib/auth-client";
 
@@ -16,7 +16,7 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "better-inbox × TanStack Start" },
+      { title: "@byo-oss/notifications × TanStack Start" },
     ],
   }),
   shellComponent: RootDocument,
@@ -54,7 +54,7 @@ function RootLayout() {
           borderBottom: "1px solid #e5e5e5",
         }}
       >
-        <strong>better-inbox × TanStack Start</strong>
+        <strong>@byo-oss/notifications × TanStack Start</strong>
         <nav style={{ display: "flex", gap: 12 }}>
           <Link to="/">Home</Link>
           <Link to="/settings">Settings</Link>
