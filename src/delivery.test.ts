@@ -561,6 +561,15 @@ describe("options", () => {
     ).toThrow(/channel "sms"/);
   });
 
+  it("returns one plugin type whatever the channels are called", () => {
+    const configured = inbox({
+      channels: { email: fakeChannel().channel },
+      routes: { x: [{ channel: "email" }] },
+    });
+    const plain: ReturnType<typeof inbox> = configured;
+    expect(plain.id).toBe("inbox");
+  });
+
   it("rejects a route that names an unknown channel", () => {
     expect(() =>
       inbox({

@@ -13,9 +13,7 @@ import {
 } from "./routes";
 import { schema } from "./schema";
 
-export type InboxOptions<
-  Channels extends Record<string, InboxChannel> = Record<string, InboxChannel>,
-> = {
+export type InboxOptions<Channel extends string = string> = {
   /**
    * Maximum number of members an organization notify may fan out to.
    * @default 1000
@@ -27,12 +25,12 @@ export type InboxOptions<
    */
   appUrl?: string;
   /** Delivery channels beyond the in-app inbox, by name. */
-  channels?: Channels;
+  channels?: Record<Channel, InboxChannel>;
   /**
    * Which channels each notification type goes to, keyed by `type`. `"*"` is
    * the fallback for types without an entry. Types with no rule stay in-app.
    */
-  routes?: Record<string, DeliveryRule<keyof Channels & string>[]>;
+  routes?: Record<string, DeliveryRule<NoInfer<Channel>>[]>;
   /** Return false to skip a delivery, e.g. from your own preferences store. */
   shouldDeliver?: ShouldDeliver;
   /**
@@ -54,10 +52,8 @@ export type InboxOptions<
   schema?: InferOptionSchema<typeof schema>;
 };
 
-export const inbox = <
-  Channels extends Record<string, InboxChannel> = Record<string, InboxChannel>,
->(
-  options: InboxOptions<Channels> = {},
+export const inbox = <Channel extends string = string>(
+  options: InboxOptions<Channel> = {},
 ) => {
   const channels: Record<string, InboxChannel> = options.channels ?? {};
   const routes = options.routes ?? {};
