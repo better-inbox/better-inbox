@@ -9,12 +9,13 @@ on:
   workflow_run:
     workflows: [release]
     types: [completed]
+  workflow_dispatch:
 
 permissions: {}
 
 jobs:
   rebuild:
-    if: github.event_name == 'push' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Dispatch a byo.dev rebuild
