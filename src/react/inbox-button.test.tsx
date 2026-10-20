@@ -180,8 +180,8 @@ describe("InboxButton", () => {
     );
 
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual([
-      "unread",
-      "all",
+      "Unread",
+      "All",
     ]);
     expect(
       screen
@@ -191,6 +191,47 @@ describe("InboxButton", () => {
     expect(client.inbox.list).toHaveBeenCalledWith({
       query: { limit: 20, offset: 0, filter: "unread" },
     });
+  });
+
+  it("renders labels in place of the English strings", async () => {
+    const client = makeMockClient();
+    render(
+      <InboxButton
+        client={client}
+        labels={{
+          notifications: "Benachrichtigungen",
+          unread: "Ungelesen",
+          all: "Alle",
+          markAllRead: "Alle gelesen",
+          relativeTime: () => "gerade eben",
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Benachrichtigungen" }));
+    await waitFor(() =>
+      expect(screen.getByText("First notification")).toBeTruthy(),
+    );
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual([
+      "Ungelesen",
+      "Alle",
+    ]);
+    expect(screen.getByRole("button", { name: "Alle gelesen" })).toBeTruthy();
+    expect(screen.getAllByText("gerade eben")).toHaveLength(2);
+  });
+
+  it("announces the unread count without changing the bell's name", async () => {
+    const client = makeMockClient();
+    render(<InboxButton client={client} />);
+
+    await waitFor(() =>
+      expect(screen.getByText("2 unread notifications")).toBeTruthy(),
+    );
+    const live = screen.getByText("2 unread notifications");
+    expect(live.getAttribute("aria-live")).toBe("polite");
+    expect(
+      screen.getByRole("button", { name: "Notifications" }),
+    ).toBeTruthy();
   });
 
   it("switching to all refetches without the unread filter", async () => {

@@ -1,20 +1,8 @@
 import type { ReactNode } from "react";
 import { useState } from "react";
+import { type InboxLabels, resolveLabels } from "./labels";
 import type { InboxNotification, useInbox } from "./use-inbox";
 import { useSeenOnView } from "./use-seen-on-view";
-
-export function formatRelativeTime(value: Date | string): string {
-  const date = typeof value === "string" ? new Date(value) : value;
-  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return date.toLocaleDateString();
-}
 
 export type InboxPanelProps = {
   inbox: ReturnType<typeof useInbox>;
@@ -23,6 +11,8 @@ export type InboxPanelProps = {
   className?: string | undefined;
   view?: "unread" | "all" | undefined;
   onViewChange?: ((view: "unread" | "all") => void) | undefined;
+  /** Replace any of the English strings. */
+  labels?: Partial<InboxLabels> | undefined;
 };
 
 export function InboxPanel({
@@ -32,7 +22,9 @@ export function InboxPanel({
   className,
   view,
   onViewChange,
+  labels: labelOverrides,
 }: InboxPanelProps) {
+  const labels = resolveLabels(labelOverrides);
   const [localView, setLocalView] = useState<"unread" | "all">("unread");
   const controlled = onViewChange !== undefined;
   const tab = controlled ? (view ?? "unread") : localView;
@@ -66,32 +58,34 @@ export function InboxPanel({
                 role="tab"
                 aria-selected={tab === value}
                 onClick={() => setTab(value)}
-                className={`rounded-md px-2 py-1 text-sm capitalize ${
+                className={`rounded-md px-2 py-1 text-sm ${
                   tab === value
                     ? "bg-accent text-accent-foreground"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {value}
+                {labels[value]}
               </button>
             ))}
           </div>
         ) : (
-          <span className="px-2 py-1 text-sm text-muted-foreground">Unread</span>
+          <span className="px-2 py-1 text-sm text-muted-foreground">
+            {labels.unread}
+          </span>
         )}
         <button
           type="button"
           onClick={() => void inbox.markAllRead()}
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          Mark all read
+          {labels.markAllRead}
         </button>
       </div>
 
       <div className="max-h-96 overflow-y-auto">
         {visible.length === 0 && !inbox.isLoading ? (
           <p className="px-3 py-8 text-center text-sm text-muted-foreground">
-            You&rsquo;re all caught up
+            {labels.empty}
           </p>
         ) : (
           <ul className="divide-y divide-border">
@@ -131,7 +125,7 @@ export function InboxPanel({
                         </span>
                       ) : null}
                       <span className="block text-xs text-muted-foreground">
-                        {formatRelativeTime(notification.createdAt)}
+                        {labels.relativeTime(new Date(notification.createdAt))}
                       </span>
                     </span>
                   </button>
@@ -148,7 +142,7 @@ export function InboxPanel({
           onClick={() => void inbox.loadMore()}
           className="border-t border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
         >
-          Load more
+          {labels.loadMore}
         </button>
       ) : null}
     </div>

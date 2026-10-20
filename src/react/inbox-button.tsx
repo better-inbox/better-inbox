@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { InboxPanel } from "./inbox-panel";
+import { type InboxLabels, resolveLabels } from "./labels";
 import type { InboxFetchClient, InboxNotification } from "./use-inbox";
 import { useInbox } from "./use-inbox";
 
@@ -20,6 +21,8 @@ export type InboxButtonProps = {
    * `relative` so the unread badge stays anchored.
    */
   buttonClassName?: string;
+  /** Replace any of the English strings. */
+  labels?: Partial<InboxLabels>;
 };
 
 const DEFAULT_BUTTON_CLASS =
@@ -35,7 +38,9 @@ export function InboxButton({
   organizationId,
   className,
   buttonClassName,
+  labels: labelOverrides,
 }: InboxButtonProps) {
+  const labels = resolveLabels(labelOverrides);
   const [view, setView] = useState<"unread" | "all">("unread");
   // a filter prop locks the panel to that list; without one, the tabs choose
   // what to fetch, so the unread tab is a real page of unread rows
@@ -79,7 +84,7 @@ export function InboxButton({
     <div ref={containerRef} className={`relative inline-block ${className ?? ""}`}>
       <button
         type="button"
-        aria-label="Notifications"
+        aria-label={labels.notifications}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         className={`relative ${buttonClassName ?? DEFAULT_BUTTON_CLASS}`}
@@ -104,6 +109,10 @@ export function InboxButton({
           </span>
         ) : null}
       </button>
+      {/* outside the button, so its accessible name stays the label alone */}
+      <span className="sr-only" aria-live="polite">
+        {inbox.unreadCount > 0 ? labels.unreadCount(inbox.unreadCount) : ""}
+      </span>
 
       {open ? (
         <div className="absolute right-0 z-50 mt-2">
@@ -111,6 +120,7 @@ export function InboxButton({
             inbox={inbox}
             onNavigate={onNavigate}
             renderItem={renderItem}
+            labels={labels}
             {...(locked ? {} : { view, onViewChange: setView })}
           />
         </div>
