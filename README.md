@@ -174,8 +174,10 @@ inbox({
   routes: {
     // in-app now; email after 15 minutes if still unread, or right away if the user isn't in the app
     "billing.payment_failed": [{ channel: "email", ifUnreadAfter: { minutes: 15 } }],
-    // in-app and email, both right away
-    "security.new_login": [{ channel: "email" }],
+    // in-app and email, both right away; the email goes out even if it's read first
+    "security.new_login": [{ channel: "email", cancelIfRead: false }],
+    // at most one email an hour per user, however often it fires
+    "run.failed": [{ channel: "email", ifUnreadAfter: { minutes: 15 }, throttle: { hours: 1 } }],
     // "*": [...] would apply to every type without its own entry; types with no rule stay in-app
   },
 });
@@ -183,9 +185,11 @@ inbox({
 
 `wrapsEmail` sends through [`@wraps.dev/email`](https://wraps.dev) from your own AWS SES account, resolving credentials from the environment. Pass `client: new WrapsEmail({ region, ... })` to configure it, and `render: ({ notification, user, appUrl }) => ({ subject, html, text })` to replace the default email (title, body and a View button). A channel is any `{ deliver({ notification, user, appUrl }) }` that throws on failure, so other providers are a few lines.
 
-**Read and seen both cancel it.** Clicking a notification marks it read. Opening the panel marks the unread rows it shows as *seen* (`seenAt`), which doesn't touch the badge or `read` but does cancel a pending email.
+**Read and seen both cancel it.** Clicking a notification marks it read. Opening the panel marks the unread rows it shows as *seen* (`seenAt`), which doesn't touch the badge or `read` but does cancel a pending email. For alerts whose email is the record, such as security events, set `cancelIfRead: false` and it goes out regardless.
 
-**"In the app" is a heartbeat.** `<InboxButton>` polls the unread count every 30 seconds while the tab is visible, and each poll records the user as present. A user with no poll in the last 2 minutes (`presenceWindow`) is away, so an `ifUnreadAfter` email goes out right away instead of waiting. Set `sendNowIfAway: false` on a rule to always wait. With `pollInterval: 0`, or on pages without the inbox mounted, users count as away.
+**Throttle alerts that repeat.** With `throttle: { hours: 1 }`, a user gets at most one email of that type per hour; later ones are skipped (with `detail: "throttled"`) and stay in the inbox. The window counts from the last email actually sent. It holds within one process; two sweeps running at once in separate processes can each send one.
+
+**"In the app" is a heartbeat.** `<InboxButton>` polls the unread count every 30 seconds while the tab is visible, and each poll records the user as present. An admin impersonating the user (better-auth's admin plugin) doesn't count. A user with no poll in the last 2 minutes (`presenceWindow`) is away, so an `ifUnreadAfter` email goes out right away instead of waiting. Set `sendNowIfAway: false` on a rule to always wait. With `pollInterval: 0`, or on pages without the inbox mounted, users count as away.
 
 **Run the sweep on a schedule.** A plugin can't run jobs, so delayed emails and retries go out when you call `processDeliveries` from your own scheduler, every minute or so:
 
@@ -240,6 +244,8 @@ With email routes, the sweep queries `notificationDelivery` by status and due ti
 
 ```ts
 index("notification_delivery_due_idx").on(table.status, table.scheduledFor)
+// only if you use throttle:
+index("notification_delivery_throttle_idx").on(table.userId, table.type, table.channel, table.sentAt)
 ```
 
 ## Upgrading to 0.6

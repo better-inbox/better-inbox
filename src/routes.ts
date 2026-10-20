@@ -148,10 +148,17 @@ export const processDeliveries = (options: ResolvedInboxOptions) =>
 // list is left out: a refresh fetches both at once, and two first-time
 // heartbeats would race to create the same unique row.
 async function heartbeat(
-  context: AuthContext & { session: { user: { id: string } } },
+  context: AuthContext & {
+    session: {
+      user: { id: string };
+      session: { impersonatedBy?: string | null };
+    };
+  },
   options: ResolvedInboxOptions,
 ) {
   if (!hasChannels(options)) return;
+  // an admin impersonating the user (admin plugin) is not the user being around
+  if (context.session.session.impersonatedBy) return;
   try {
     await touchPresence(context, context.session.user.id);
   } catch (error) {

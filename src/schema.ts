@@ -59,6 +59,10 @@ export const schema = {
         required: true,
         references: { model: "user", field: "id" },
       },
+      type: {
+        type: "string",
+        required: true,
+      },
       channel: {
         type: "string",
         required: true,
@@ -130,6 +134,8 @@ export type NotificationDelivery = {
   id: string;
   notificationId: string;
   userId: string;
+  /** The notification's type, so throttling can look up recent sends. */
+  type: string;
   channel: string;
   status: DeliveryStatus;
   scheduledFor: Date;

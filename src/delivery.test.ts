@@ -1,3 +1,4 @@
+import { admin } from "better-auth/plugins";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeliveryContext, InboxChannel } from "./delivery";
 import { inbox, type InboxOptions } from "./index";
@@ -263,6 +264,101 @@ describe("email if unread", () => {
   });
 });
 
+describe("cancelIfRead and throttle", () => {
+  it("sends a cancelIfRead: false email even after the notification was read", async () => {
+    const email = fakeChannel();
+    const auth = createTestAuth({
+      channels: { email: email.channel },
+      routes: {
+        "account.password_changed": [{ channel: "email", cancelIfRead: false }],
+      },
+    });
+    const alice = await signUpUser(auth, "alice@example.com");
+    const { notifications } = await auth.api.notify({
+      body: { userId: alice.user.id, type: "account.password_changed", title: "x" },
+    });
+    await auth.api.markRead({
+      headers: alice.headers,
+      body: { id: notifications[0]!.id },
+    });
+    expect(await auth.api.processDeliveries({})).toMatchObject({ sent: 1 });
+    expect(email.sent).toHaveLength(1);
+  });
+
+  it("still honors shouldDeliver with cancelIfRead: false", async () => {
+    const email = fakeChannel();
+    const auth = createTestAuth({
+      channels: { email: email.channel },
+      routes: { x: [{ channel: "email", cancelIfRead: false }] },
+      shouldDeliver: () => false,
+    });
+    const alice = await signUpUser(auth, "alice@example.com");
+    await auth.api.notify({ body: { userId: alice.user.id, type: "x", title: "x" } });
+    expect(await auth.api.processDeliveries({})).toMatchObject({ skipped: 1 });
+  });
+
+  it("sends one email per throttle window, even for rows in the same sweep", async () => {
+    const email = fakeChannel();
+    const auth = createTestAuth({
+      channels: { email: email.channel },
+      routes: { "run.failed": [{ channel: "email", throttle: { hours: 1 } }] },
+    });
+    const alice = await signUpUser(auth, "alice@example.com");
+    const bob = await signUpUser(auth, "bob@example.com");
+    for (const title of ["a", "b", "c"]) {
+      await auth.api.notify({
+        body: { userId: alice.user.id, type: "run.failed", title },
+      });
+    }
+    // another user's throttle is separate
+    await auth.api.notify({
+      body: { userId: bob.user.id, type: "run.failed", title: "d" },
+    });
+
+    expect(await auth.api.processDeliveries({})).toMatchObject({
+      sent: 2,
+      skipped: 2,
+    });
+    expect(email.sent.map((s) => s.notification.title).sort()).toEqual(["a", "d"]);
+    expect(
+      (await deliveries(auth)).filter((d) => d.detail === "throttled"),
+    ).toHaveLength(2);
+
+    advance(59 * MINUTE);
+    await auth.api.notify({
+      body: { userId: alice.user.id, type: "run.failed", title: "e" },
+    });
+    expect(await auth.api.processDeliveries({})).toMatchObject({ skipped: 1 });
+    advance(1 * MINUTE);
+    await auth.api.notify({
+      body: { userId: alice.user.id, type: "run.failed", title: "f" },
+    });
+    expect(await auth.api.processDeliveries({})).toMatchObject({ sent: 1 });
+  });
+
+  it("does not count a skipped delivery toward the throttle", async () => {
+    const email = fakeChannel();
+    const auth = createTestAuth({
+      channels: { email: email.channel },
+      routes: { x: [{ channel: "email", throttle: { hours: 1 } }] },
+    });
+    const alice = await signUpUser(auth, "alice@example.com");
+    const first = await auth.api.notify({
+      body: { userId: alice.user.id, type: "x", title: "a" },
+    });
+    await auth.api.markRead({
+      headers: alice.headers,
+      body: { id: first.notifications[0]!.id },
+    });
+    await auth.api.notify({ body: { userId: alice.user.id, type: "x", title: "b" } });
+    expect(await auth.api.processDeliveries({})).toMatchObject({
+      sent: 1,
+      skipped: 1,
+    });
+    expect(email.sent[0]!.notification.title).toBe("b");
+  });
+});
+
 describe("processDeliveries", () => {
   it("sends once when sweeps overlap", async () => {
     const { email, options } = emailAfter15();
@@ -495,6 +591,64 @@ describe("options", () => {
     const rows = await presence();
     expect(rows).toHaveLength(1);
     expect(new Date(rows[0]!.lastSeenAt).getTime()).toBe(Date.now());
+  });
+
+  it("does not record presence for an impersonated session", async () => {
+    const { options } = emailAfter15();
+    const auth = createTestAuth(options, { plugins: [admin()] });
+    const adminUser = await signUpUser(auth, "admin@example.com");
+    const alice = await signUpUser(auth, "alice@example.com");
+    const ctx = await auth.$context;
+    await ctx.adapter.update({
+      model: "user",
+      where: [{ field: "id", value: adminUser.user.id }],
+      update: { role: "admin" },
+    });
+    const { headers } = await (auth.api as any).impersonateUser({
+      headers: adminUser.headers,
+      body: { userId: alice.user.id },
+      returnHeaders: true,
+    });
+    // the response clears session_token before setting the impersonation one,
+    // so keep the last non-empty value per cookie name
+    const jar = new Map<string, string>();
+    for (const set of (headers as Headers).getSetCookie()) {
+      const [pair = ""] = set.split(";");
+      const [name = "", value = ""] = pair.split("=");
+      if (value) jar.set(name, pair);
+    }
+    const cookie = [...jar.values()].join("; ");
+
+    const res = await auth.api.unreadCount({
+      headers: new Headers({ cookie }),
+      query: {},
+    });
+    expect(res.count).toBe(0);
+    expect(
+      await ctx.adapter.findMany({
+        model: "inboxPresence",
+        where: [{ field: "userId", value: alice.user.id }],
+      }),
+    ).toHaveLength(0);
+
+    // the real user still counts
+    await auth.api.unreadCount({ headers: alice.headers, query: {} });
+    expect(
+      await ctx.adapter.findMany({
+        model: "inboxPresence",
+        where: [{ field: "userId", value: alice.user.id }],
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("rejects a type that lists the same channel twice", () => {
+    const email = fakeChannel().channel;
+    expect(() =>
+      inbox({
+        channels: { email },
+        routes: { x: [{ channel: "email" }, { channel: "email" }] },
+      }),
+    ).toThrow(/more than once/);
   });
 
   it("does not record presence when no channels are configured", async () => {

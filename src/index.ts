@@ -62,12 +62,19 @@ export const inbox = <
   const channels: Record<string, InboxChannel> = options.channels ?? {};
   const routes = options.routes ?? {};
   for (const [type, rules] of Object.entries(routes)) {
+    const seen = new Set<string>();
     for (const rule of rules) {
       if (!channels[rule.channel]) {
         throw new Error(
           `[better-inbox] routes["${type}"] uses channel "${rule.channel}", which is not in channels`,
         );
       }
+      if (seen.has(rule.channel)) {
+        throw new Error(
+          `[better-inbox] routes["${type}"] lists channel "${rule.channel}" more than once`,
+        );
+      }
+      seen.add(rule.channel);
     }
   }
   const opts = {

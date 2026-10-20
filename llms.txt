@@ -33,12 +33,12 @@ import { wrapsEmail } from "better-inbox/wraps";
 inbox({
   appUrl: "https://app.acme.com",
   channels: { email: wrapsEmail({ from: "Acme <notify@acme.com>" /*, client: new WrapsEmail({...}), render: (ctx) => ({ subject, html, text }) */ }) },
-  routes: { "billing.payment_failed": [{ channel: "email", ifUnreadAfter: { minutes: 15 } }], "security.new_login": [{ channel: "email" }] }, // keyed by type; "*" fallback; no rule = in-app only
+  routes: { "billing.payment_failed": [{ channel: "email", ifUnreadAfter: { minutes: 15 }, throttle: { hours: 24 } }], "security.new_login": [{ channel: "email", cancelIfRead: false }] }, // keyed by type; "*" fallback; no rule = in-app only; a channel at most once per type
   shouldDeliver: ({ notification, user, channel }) => true, // your own opt-out check
   // presenceWindow: 120000, maxAttempts: 5, batchSize: 100
 });
 await auth.api.processDeliveries({}); // REQUIRED from a cron (every minute): sends delayed emails and retries → { sent, skipped, retrying, failed, hasMore }
-// The email is skipped if the notification is read, or seen (seenAt, set when the panel shows it). Users with no unread-count poll within presenceWindow are "away": ifUnreadAfter emails go out right away (sendNowIfAway: false to always wait). Due-now emails send inside notify only with advanced.backgroundTasks.handler and <=25 rows; otherwise on the next sweep. At-least-once; atomic claim; backoff 1m doubling to 1h; rows in notificationDelivery (status pending|sending|sent|skipped|failed, detail).
+// The email is skipped if the notification is read, or seen (seenAt, set when the panel shows it), unless cancelIfRead: false. throttle: at most one sent email per (user, type, channel) per window; extras skipped with detail "throttled" (best-effort across concurrent processes). Impersonated sessions (admin plugin) don't count as presence. Users with no unread-count poll within presenceWindow are "away": ifUnreadAfter emails go out right away (sendNowIfAway: false to always wait). Due-now emails send inside notify only with advanced.backgroundTasks.handler and <=25 rows; otherwise on the next sweep. At-least-once; atomic claim; backoff 1m doubling to 1h; rows in notificationDelivery (status pending|sending|sent|skipped|failed, detail).
 // A channel is { deliver({ notification, user, appUrl }) } that throws on failure.
 
 ## Read/mutate (session-scoped to caller)
@@ -64,5 +64,5 @@ const { notifications, unreadCount, isLoading, hasMore, loadMore, markRead, mark
 - components styled with shadcn CSS variables (bg-popover, text-muted-foreground, ...); zero runtime deps; shadcn not required
 - Tailwind v4: add `@source "<path>/node_modules/better-inbox/dist";` to your CSS (v4 skips node_modules)
 - InboxButton renders its own <button>; don't wrap it in one. className styles the wrapper; buttonClassName replaces the trigger's default classes (e.g. shadcn buttonVariants({ variant: "ghost", size: "icon" }))
-- recommend manual index on notification (userId, createdAt); with email routes also notificationDelivery (status, scheduledFor)
+- recommend manual index on notification (userId, createdAt); with email routes also notificationDelivery (status, scheduledFor), and with throttle (userId, type, channel, sentAt)
 - community plugin, not affiliated with better-auth

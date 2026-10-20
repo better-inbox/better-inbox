@@ -24,7 +24,7 @@ export function createTestAuth(
   opts: InboxOptions = {},
   authOptions: Partial<BetterAuthOptions> = {},
 ) {
-  const plugins = [inbox(opts)];
+  const plugins = [inbox(opts), ...(authOptions.plugins ?? [])];
   return betterAuth({
     ...baseOptions,
     ...authOptions,

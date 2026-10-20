@@ -35,6 +35,16 @@ export type DeliveryRule<Channel extends string = string> = {
    * inbox poll within `presenceWindow`). @default true
    */
   sendNowIfAway?: boolean;
+  /**
+   * Skip the send when the notification was read or seen first. Set false for
+   * alerts whose email is the record, such as security events. @default true
+   */
+  cancelIfRead?: boolean;
+  /**
+   * Send at most one email of this type per user per window; later ones are
+   * skipped (they're still in the inbox). For alerts that can fire repeatedly.
+   */
+  throttle?: Duration;
 };
 
 export type ShouldDeliver = (ctx: {
@@ -67,6 +77,14 @@ export const hasChannels = (options: ResolvedDeliveryOptions) =>
 
 const rulesFor = (options: ResolvedDeliveryOptions, type: string) =>
   options.routes[type] ?? options.routes["*"] ?? [];
+
+// init rejects a type listing one channel twice, so this lookup is unambiguous
+const ruleFor = (
+  options: ResolvedDeliveryOptions,
+  type: string,
+  channel: string,
+): DeliveryRule | undefined =>
+  rulesFor(options, type).find((rule) => rule.channel === channel);
 
 /**
  * Records that the user is in the app. Called from the endpoints the inbox
@@ -166,6 +184,7 @@ export async function scheduleDeliveries(
         data: {
           notificationId: notification.id,
           userId: notification.userId,
+          type: notification.type,
           channel: rule.channel,
           status: "pending",
           scheduledFor,
@@ -279,23 +298,32 @@ async function attemptDeliveries(
   const notificationsById = new Map(notifications.map((n) => [n.id, n]));
   const usersById = new Map(users.map((u) => [u.id, u]));
 
-  for (let i = 0; i < deliveries.length; i += CONCURRENCY) {
-    const outcomes = await Promise.all(
-      deliveries
-        .slice(i, i + CONCURRENCY)
-        .map((delivery) =>
-          attemptDelivery(
+  // A throttle check reads the last send for (user, type, channel), so two
+  // rows with the same key must not run side by side or both would pass it.
+  // Groups run in parallel; each group runs in order.
+  const groups = new Map<string, NotificationDelivery[]>();
+  for (const delivery of deliveries) {
+    const key = `${delivery.userId}|${delivery.type}|${delivery.channel}`;
+    const group = groups.get(key);
+    if (group) group.push(delivery);
+    else groups.set(key, [delivery]);
+  }
+  const queue = [...groups.values()];
+  for (let i = 0; i < queue.length; i += CONCURRENCY) {
+    await Promise.all(
+      queue.slice(i, i + CONCURRENCY).map(async (group) => {
+        for (const delivery of group) {
+          const outcome = await attemptDelivery(
             context,
             delivery,
             notificationsById.get(delivery.notificationId),
             usersById.get(delivery.userId),
             options,
-          ),
-        ),
+          );
+          if (outcome) result[outcome]++;
+        }
+      }),
     );
-    for (const outcome of outcomes) {
-      if (outcome) result[outcome]++;
-    }
   }
   return result;
 }
@@ -336,9 +364,29 @@ async function attemptDelivery(
   const channel = options.channels[delivery.channel];
   if (!channel) return skip("unknown channel");
   if (!notification) return skip("notification deleted");
-  if (notification.read) return skip("read");
-  if (notification.seenAt) return skip("seen");
+  const rule = ruleFor(options, delivery.type, delivery.channel);
+  if (rule?.cancelIfRead !== false) {
+    if (notification.read) return skip("read");
+    if (notification.seenAt) return skip("seen");
+  }
   if (!user) return skip("user deleted");
+  if (rule?.throttle) {
+    const recent = await context.adapter.findOne<NotificationDelivery>({
+      model: "notificationDelivery",
+      where: [
+        { field: "userId", value: delivery.userId },
+        { field: "type", value: delivery.type },
+        { field: "channel", value: delivery.channel },
+        { field: "status", value: "sent" },
+        {
+          field: "sentAt",
+          operator: "gt",
+          value: new Date(now.getTime() - durationMs(rule.throttle)),
+        },
+      ],
+    });
+    if (recent) return skip("throttled");
+  }
   if (
     options.shouldDeliver &&
     !(await options.shouldDeliver({
