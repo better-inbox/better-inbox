@@ -1,4 +1,4 @@
-import type { AuthContext, User, Where } from "better-auth";
+import type { AuthContext, DBTransactionAdapter, User, Where } from "better-auth";
 import { findManyIn } from "./adapter";
 import type {
   InboxPresence,
@@ -152,13 +152,13 @@ export async function touchPresence(
 }
 
 async function presentUserIds(
-  context: AuthContext,
+  adapter: DBTransactionAdapter,
   userIds: string[],
   options: ResolvedDeliveryOptions,
   now: Date,
 ) {
   if (userIds.length === 0) return new Set<string>();
-  const rows = await findManyIn<InboxPresence>(context.adapter, {
+  const rows = await findManyIn<InboxPresence>(adapter, {
     model: "inboxPresence",
     field: "userId",
     values: userIds,
@@ -174,12 +174,16 @@ async function presentUserIds(
 }
 
 /**
- * Writes the delivery rows for freshly created notifications. Rows due now are
- * attempted in the background when better-auth has a background task handler
- * and the batch is small; everything else waits for `processDeliveries`.
+ * Writes the delivery rows for freshly created notifications, through `adapter`
+ * (the caller's transaction, when there is one). Rows due now are attempted in
+ * the background when better-auth has a background task handler and the batch
+ * is small; everything else waits for `processDeliveries`. Inside a transaction
+ * nothing is attempted here: the rows aren't committed yet, and the sweep sends
+ * them once the transaction is.
  */
 export async function scheduleDeliveries(
   context: AuthContext,
+  adapter: DBTransactionAdapter,
   notifications: Notification[],
   options: ResolvedDeliveryOptions,
 ) {
@@ -194,7 +198,7 @@ export async function scheduleDeliveries(
     (rule) => rule.ifUnreadAfter && rule.sendNowIfAway !== false,
   )
     ? await presentUserIds(
-        context,
+        adapter,
         [...new Set(notifications.map((n) => n.userId))],
         options,
         now,
@@ -210,7 +214,7 @@ export async function scheduleDeliveries(
       const scheduledFor = sendNow
         ? now
         : new Date(now.getTime() + durationMs(rule.ifUnreadAfter!));
-      const delivery = await context.adapter.create<
+      const delivery = await adapter.create<
         Omit<NotificationDelivery, "id">,
         NotificationDelivery
       >({
@@ -232,7 +236,9 @@ export async function scheduleDeliveries(
 
   // without a handler runInBackgroundOrAwait awaits, which would hold notify
   // open for every send; the sweep picks these up instead
+  const inTransaction = adapter !== context.adapter;
   if (
+    !inTransaction &&
     dueNow.length > 0 &&
     dueNow.length <= options.immediateLimit &&
     context.options.advanced?.backgroundTasks?.handler

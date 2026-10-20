@@ -108,6 +108,8 @@ await auth.api.notify({
 
 `notify` is server-only: callable through `auth.api`, never exposed as an HTTP route.
 
+Inside a better-auth transaction (`runWithTransaction`, as in a `@better-auth/scim` projection), `notify` writes its notification and delivery rows in that transaction, so they commit or roll back with it. No email goes out for it until the transaction commits: the next `processDeliveries` sweep sends it.
+
 ## Notify a whole organization
 
 With the better-auth [organization plugin](https://better-auth.com/docs/plugins/organization) enabled, address an org instead of a user. One notification is created per member (fan-out on write), each stamped with `organizationId`:
@@ -224,7 +226,7 @@ export async function GET() {
 }
 ```
 
-Emails that are due right away (an away user, a rule with no delay) are sent inside `notify` when better-auth has a background task handler (`advanced: { backgroundTasks: { handler: waitUntil } }`) and the batch is 25 or fewer. Otherwise, including large org fan-outs, they go out on the next sweep. Each sweep handles `batchSize` deliveries (100) and returns `hasMore` when more are due.
+Emails that are due right away (an away user, a rule with no delay) are sent inside `notify` when better-auth has a background task handler (`advanced: { backgroundTasks: { handler: waitUntil } }`) and the batch is 25 or fewer. Otherwise, including large org fan-outs, and any `notify` inside a better-auth transaction, they go out on the next sweep. Each sweep handles `batchSize` deliveries (100) and returns `hasMore` when more are due.
 
 **Delivery is at-least-once.** Each delivery is claimed atomically before it's sent, so overlapping sweeps don't double-send. A failed send retries with backoff (1 minute, doubling, up to an hour) and is marked `failed` after `maxAttempts` (5). A worker that dies mid-send has its delivery retried five minutes later, so a crash after SES accepted the email can send it twice.
 
