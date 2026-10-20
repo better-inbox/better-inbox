@@ -62,6 +62,7 @@ const seenRef = useSeenOnView(markSeen, { delayMs: 1000, threshold: 0.5 }); // <
 
 - notification fields: id, userId, organizationId?, type, title, body?, href?, data? (json), read (boolean), seenAt?, createdAt
 - 0.6 adds seenAt plus tables notificationDelivery and inboxPresence: re-run migrate after upgrading
+- 0.6 InboxFetchClient requires inbox.markSeen; a hand-built adapter must pass it or seen never cancels emails
 - components styled with shadcn CSS variables (bg-popover, text-muted-foreground, ...); zero runtime deps; shadcn not required
 - Tailwind v4: add `@source "<path>/node_modules/better-inbox/dist";` to your CSS (v4 skips node_modules)
 - InboxButton renders its own <button>; don't wrap it in one. className styles the wrapper; buttonClassName replaces the trigger's default classes (e.g. shadcn buttonVariants({ variant: "ghost", size: "icon" }))

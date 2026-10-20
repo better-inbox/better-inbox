@@ -30,6 +30,7 @@ function makeMockClient(
       }),
       markRead: vi.fn().mockResolvedValue({ data: {}, error: null }),
       markAllRead: vi.fn().mockResolvedValue({ data: { count: 0 }, error: null }),
+      markSeen: vi.fn().mockResolvedValue({ data: { count: 0 }, error: null }),
     },
   } satisfies InboxFetchClient;
   return client;

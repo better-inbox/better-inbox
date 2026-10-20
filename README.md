@@ -252,6 +252,8 @@ index("notification_delivery_throttle_idx").on(table.userId, table.type, table.c
 
 0.6 adds a `seenAt` column to `notification` and two tables, `notificationDelivery` and `inboxPresence`. Re-run `migrate` (or `generate`) after upgrading, even if you don't use email.
 
+If you hand `useInbox` your own client object rather than `authClient`, add `markSeen: ({ ids }) => authClient.inbox.markSeen({ ids })` to it. `InboxFetchClient` now requires it, because without it nothing is marked seen and every unread email goes out.
+
 ## What this is not (yet)
 
 In-app first: email follows a notification that went unread, and it uses the inbox's own read state to decide. Notification preferences, push, SMS, digests and realtime websockets aren't here yet. Polling + refetch on tab visibility covers the badge honestly. If you need full multi-channel delivery pipelines today, look at [Novu](https://novu.co) or [betternotify](https://github.com/better-notify/better-notify).

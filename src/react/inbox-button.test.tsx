@@ -44,6 +44,7 @@ function makeMockClient(
       markAllRead: vi
         .fn()
         .mockResolvedValue({ data: { count: 2 }, error: null }),
+      markSeen: vi.fn().mockResolvedValue({ data: { count: 0 }, error: null }),
     },
   };
 }
