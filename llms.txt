@@ -80,6 +80,6 @@ const seenRef = useSeenOnView(markSeen, { delayMs: 1000, threshold: 0.5 }); // <
 - components styled with shadcn CSS variables (bg-popover, text-muted-foreground, ...); zero runtime deps; shadcn not required
 - Tailwind v4: add `@source "<path>/node_modules/@byo-oss/notifications/dist";` to your CSS (v4 skips node_modules)
 - InboxButton renders its own <button>; don't wrap it in one. className styles the wrapper; buttonClassName replaces the trigger's default classes (e.g. shadcn buttonVariants({ variant: "ghost", size: "icon" }))
-- recommend manual index on notification (userId, createdAt); with email routes also notificationDelivery (status, scheduledFor), and with throttle (userId, type, channel, sentAt); for org cleanup/export notification (organizationId) and notificationDelivery (notificationId)
+- recommend manual index on notification (userId, createdAt); with email routes also notificationDelivery (status, scheduledFor), and with throttle (userId, type, channel, sentAt); for org cleanup/export notification (organizationId, createdAt) and notificationDelivery (notificationId); for export without organizationId, notification (createdAt)
 - in lists are chunked at 90 values, so Cloudflare D1's 100-parameter limit holds
 - community plugin, not affiliated with better-auth
