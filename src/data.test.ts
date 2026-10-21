@@ -1,8 +1,13 @@
+import {
+  getCurrentAdapter,
+  runWithTransaction,
+} from "@better-auth/core/context";
 import { getAuthTables } from "@better-auth/core/db";
 import { memoryAdapter, type MemoryDB } from "@better-auth/memory-adapter";
 import { betterAuth } from "better-auth";
 import { describe, expect, it } from "vitest";
 import {
+  type AuthWithContext,
   deleteMemberData,
   deleteOrganizationData,
   type ExportedNotification,
@@ -76,6 +81,8 @@ async function setup() {
   };
   return { auth, alice, bob, carol, acme, globex, rows };
 }
+
+type Fixture = Awaited<ReturnType<typeof setup>>;
 
 describe("organization cleanup", () => {
   it("deleting an organization drops its notifications and deliveries", async () => {
@@ -177,6 +184,82 @@ describe("deleteOrganizationData / deleteMemberData", () => {
       /needs the inbox plugin/,
     );
   });
+
+  // how SCIM deprovisioning calls them: the member row is deleted inside the
+  // directory's transaction, and the cleanup has to ride along with it
+  describe("inside a better-auth transaction", () => {
+    const removeBobFromAcme = async ({ auth, bob, acme }: Fixture) => {
+      const trx = await getCurrentAdapter((await auth.$context).adapter);
+      await trx.deleteMany({
+        model: "member",
+        where: [
+          { field: "userId", value: bob.user.id },
+          { field: "organizationId", value: acme.id },
+        ],
+      });
+      await deleteMemberData(auth, {
+        userId: bob.user.id,
+        organizationId: acme.id,
+      });
+    };
+    const bobInAcme = async ({ auth, bob, acme }: Fixture) => {
+      const { adapter } = await auth.$context;
+      return adapter.count({
+        model: "member",
+        where: [
+          { field: "userId", value: bob.user.id },
+          { field: "organizationId", value: acme.id },
+        ],
+      });
+    };
+
+    it("commits with the caller's transaction", async () => {
+      const fixture = await setup();
+      const { auth, bob, acme, rows } = fixture;
+
+      await runWithTransaction((await auth.$context).adapter, () =>
+        removeBobFromAcme(fixture),
+      );
+
+      expect(await bobInAcme(fixture)).toBe(0);
+      const after = await rows();
+      expect(after.of(acme.id, bob.user.id)).toHaveLength(0);
+      expect(after.of(acme.id)).toHaveLength(2);
+      expect(after.orphans).toEqual([]);
+    });
+
+    it("rolls back with the caller's transaction", async () => {
+      const fixture = await setup();
+      const { auth, bob, acme, rows } = fixture;
+
+      await expect(
+        runWithTransaction((await auth.$context).adapter, async () => {
+          await removeBobFromAcme(fixture);
+          throw new Error("directory write failed");
+        }),
+      ).rejects.toThrow("directory write failed");
+
+      expect(await bobInAcme(fixture)).toBe(1);
+      const after = await rows();
+      expect(after.of(acme.id, bob.user.id)).toHaveLength(1);
+      expect(after.deliveries).toHaveLength(7);
+    });
+
+    it("rolls back an organization's delete too", async () => {
+      const { auth, acme, rows } = await setup();
+
+      await expect(
+        runWithTransaction((await auth.$context).adapter, async () => {
+          await deleteOrganizationData(auth, acme.id);
+          throw new Error("delete failed");
+        }),
+      ).rejects.toThrow("delete failed");
+
+      const after = await rows();
+      expect(after.of(acme.id)).toHaveLength(3);
+      expect(after.deliveries).toHaveLength(7);
+    });
+  });
 });
 
 describe("exportNotificationsData", () => {
@@ -234,6 +317,103 @@ describe("exportNotificationsData", () => {
       "bob@example.com",
       "carol@example.com",
     ]);
+  });
+});
+
+describe("exportNotificationsData paging", () => {
+  // localeCompare puts "a" before "B"; code-point order puts "B" first. The
+  // cursor must not depend on which one the adapter uses.
+  const ids = [
+    "b", "A", "a_1", "a-1", "Z", "a", "B2", "b10", "_x", "-y", "c", "C",
+  ];
+  // four rows share each timestamp, so pages end inside a tie
+  const at = (i: number) =>
+    new Date(Date.UTC(2026, 0, 1, 0, 0, 0, Math.floor(i / 4)));
+
+  async function seed(
+    auth: Awaited<ReturnType<typeof setup>>["auth"],
+    userId: string,
+  ) {
+    const { adapter } = await auth.$context;
+    for (const [i, id] of ids.entries()) {
+      await adapter.create({
+        model: "notification",
+        forceAllowId: true,
+        data: {
+          id,
+          userId,
+          organizationId: "paging",
+          type: "bulk",
+          title: id,
+          read: false,
+          createdAt: at(i),
+        },
+      });
+    }
+  }
+
+  async function exportAll(
+    auth: AuthWithContext,
+    limit: number,
+    afterFirstPage?: (exported: string[]) => Promise<void>,
+  ) {
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const page = await exportNotificationsData(auth, {
+        organizationId: "paging",
+        cursor,
+        limit,
+      });
+      seen.push(...page.notifications.map((n) => n.id));
+      cursor = page.cursor;
+      if (++pages === 1) await afterFirstPage?.(seen);
+    } while (cursor);
+    return { seen, pages };
+  }
+
+  it("sorts the test ids differently under localeCompare and code-point order", () => {
+    expect([...ids].sort((a, b) => a.localeCompare(b))).not.toEqual(
+      [...ids].sort(),
+    );
+  });
+
+  it("does not skip a row when one is deleted between pages", async () => {
+    const { auth, alice } = await setup();
+    await seed(auth, alice.user.id);
+    const { adapter } = await auth.$context;
+
+    const { seen, pages } = await exportAll(auth, 2, async (exported) => {
+      // a row on the first page goes; an offset cursor would now skip one
+      await adapter.deleteMany({
+        model: "notification",
+        where: [{ field: "id", value: exported[0] ?? "" }],
+      });
+    });
+
+    expect(pages).toBeGreaterThan(1);
+    // the deleted row was exported before it went, so it appears once
+    expect(seen.sort()).toEqual([...ids].sort());
+  });
+
+  it("exports every id once, across pages of any size", async () => {
+    const { auth, alice } = await setup();
+    await seed(auth, alice.user.id);
+
+    for (const limit of [1, 3, 5, ids.length]) {
+      const { seen } = await exportAll(auth, limit);
+      expect(seen.sort()).toEqual([...ids].sort());
+    }
+  });
+
+  it("rejects an offset cursor from 0.8.x", async () => {
+    const { auth, alice } = await setup();
+    await seed(auth, alice.user.id);
+
+    await expect(
+      exportNotificationsData(auth, { organizationId: "paging", cursor: "4" }),
+    ).rejects.toThrow(/earlier release/);
   });
 });
 

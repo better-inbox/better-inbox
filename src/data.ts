@@ -1,4 +1,9 @@
-import type { AuthContext, Where } from "better-auth";
+import {
+  type AuthContext,
+  type DBTransactionAdapter,
+  getCurrentAdapter,
+  type Where,
+} from "better-auth";
 import { createAuthMiddleware, isAPIError } from "better-auth/api";
 import { findManyIn, IN_CHUNK } from "./adapter";
 import type { Notification, NotificationDelivery } from "./schema";
@@ -21,12 +26,22 @@ async function inboxContext(auth: AuthWithContext, caller: string) {
   return context;
 }
 
+// inside a better-auth transaction (runWithTransaction, e.g. SCIM
+// deprovisioning) this is that transaction, so our writes commit and roll back
+// with the caller's; the outer adapter would wait on it, or deadlock on one
+// connection
+const currentAdapter = (context: AuthContext) =>
+  getCurrentAdapter(context.adapter);
+
 // deliveries go first: adapters without foreign keys (memory, MongoDB) don't
 // cascade, and a delivery must never outlive its notification
-async function deleteNotifications(context: AuthContext, where: Where[]) {
+async function deleteNotifications(
+  adapter: DBTransactionAdapter,
+  where: Where[],
+) {
   let deleted = 0;
   for (;;) {
-    const page = await context.adapter.findMany<Pick<Notification, "id">>({
+    const page = await adapter.findMany<Pick<Notification, "id">>({
       model: "notification",
       where,
       limit: IN_CHUNK,
@@ -34,11 +49,11 @@ async function deleteNotifications(context: AuthContext, where: Where[]) {
     });
     if (page.length === 0) return deleted;
     const ids = page.map((row) => row.id);
-    await context.adapter.deleteMany({
+    await adapter.deleteMany({
       model: "notificationDelivery",
       where: [{ field: "notificationId", operator: "in", value: ids }],
     });
-    const removed = await context.adapter.deleteMany({
+    const removed = await adapter.deleteMany({
       model: "notification",
       where: [{ field: "id", operator: "in", value: ids }],
     });
@@ -59,13 +74,14 @@ async function deleteNotifications(context: AuthContext, where: Where[]) {
  * user row is deleted.
  */
 export async function deleteUserRows(context: AuthContext, userId: string) {
-  await deleteNotifications(context, [{ field: "userId", value: userId }]);
+  const adapter = await currentAdapter(context);
+  await deleteNotifications(adapter, [{ field: "userId", value: userId }]);
   // deliveries carry userId too, so none can be left behind
-  await context.adapter.deleteMany({
+  await adapter.deleteMany({
     model: "notificationDelivery",
     where: [{ field: "userId", value: userId }],
   });
-  await context.adapter.deleteMany({
+  await adapter.deleteMany({
     model: "inboxPresence",
     where: [{ field: "userId", value: userId }],
   });
@@ -102,7 +118,7 @@ export const organizationCleanupHook = {
     const where = orgCleanup[ctx.path]?.(returned);
     if (!where) return;
     try {
-      await deleteNotifications(ctx.context, where);
+      await deleteNotifications(await currentAdapter(ctx.context), where);
     } catch (error) {
       // the org change already happened; failing the response wouldn't undo it
       ctx.context.logger.error(
@@ -116,14 +132,17 @@ export const organizationCleanupHook = {
 /**
  * Deletes every notification (and its deliveries) stamped with this
  * organization. The plugin already does this after `/organization/delete`;
- * call it for organizations deleted any other way.
+ * call it for organizations deleted any other way. Inside a better-auth
+ * transaction (`runWithTransaction`) it runs in that transaction and rolls
+ * back with it.
  */
 export async function deleteOrganizationData(
   auth: AuthWithContext,
   organizationId: string,
 ): Promise<{ notifications: number }> {
   const context = await inboxContext(auth, "deleteOrganizationData");
-  const notifications = await deleteNotifications(context, [
+  const adapter = await currentAdapter(context);
+  const notifications = await deleteNotifications(adapter, [
     { field: "organizationId", value: organizationId },
   ]);
   return { notifications };
@@ -133,14 +152,17 @@ export async function deleteOrganizationData(
  * Deletes one person's notifications (and deliveries) in one organization, for
  * when they leave it or are removed. Their other notifications stay. The
  * plugin already does this after `/organization/remove-member` and
- * `/organization/leave`.
+ * `/organization/leave`. Inside a better-auth transaction
+ * (`runWithTransaction`, as in SCIM deprovisioning) it runs in that
+ * transaction and rolls back with it.
  */
 export async function deleteMemberData(
   auth: AuthWithContext,
   { userId, organizationId }: { userId: string; organizationId: string },
 ): Promise<{ notifications: number }> {
   const context = await inboxContext(auth, "deleteMemberData");
-  const notifications = await deleteNotifications(context, [
+  const adapter = await currentAdapter(context);
+  const notifications = await deleteNotifications(adapter, [
     { field: "userId", value: userId },
     { field: "organizationId", value: organizationId },
   ]);
@@ -186,19 +208,84 @@ const serialize = <T extends object>(row: T): Serialized<T> =>
   ) as Serialized<T>;
 
 /**
+ * The export cursor: where the last page stopped, as a `createdAt` plus the ids
+ * already exported with exactly that `createdAt`. Sorting and comparing dates
+ * gives the same order on every adapter, which comparing string ids doesn't
+ * (the memory adapter sorts with localeCompare and compares with `>`).
+ */
+type ExportCursor = { t: string; ids: string[] };
+
+const ENCODED_CURSOR = /^[A-Za-z0-9_-]+$/;
+
+function encodeCursor(cursor: ExportCursor): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(cursor));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+const timeOf = (n: Pick<Notification, "createdAt">) =>
+  new Date(n.createdAt).getTime();
+
+// the last row returned sets the position; ids already exported at that same
+// createdAt (from an earlier page) stay in the list, since the window still
+// holds them
+function cursorAfter(
+  rows: Notification[],
+  from: Date | null,
+  exported: Set<string>,
+): ExportCursor {
+  const last = timeOf(rows[rows.length - 1]!);
+  const ids = rows.filter((n) => timeOf(n) === last).map((n) => n.id);
+  if (from?.getTime() === last) ids.push(...exported);
+  return { t: new Date(last).toISOString(), ids };
+}
+
+function decodeCursor(value: string): ExportCursor | null {
+  if (!ENCODED_CURSOR.test(value)) return null;
+  try {
+    const binary = atob(value.replace(/-/g, "+").replace(/_/g, "/"));
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    const parsed = JSON.parse(new TextDecoder().decode(bytes));
+    if (
+      typeof parsed?.t === "string" &&
+      !Number.isNaN(Date.parse(parsed.t)) &&
+      Array.isArray(parsed.ids) &&
+      parsed.ids.every((id: unknown) => typeof id === "string")
+    ) {
+      return parsed as ExportCursor;
+    }
+  } catch {
+    // not base64 or not JSON: the caller reports it
+  }
+  return null;
+}
+
+/**
  * Exports every notification (or one organization's) with its deliveries and
  * the user's email, a page at a time, as plain JSON. Server-only; for moving
- * to another tool or keeping an archive. Pages run in id order, and the cursor
- * is opaque. A row deleted mid-export (a member leaving, say) shifts later
- * rows back a page, so one can be skipped: export with writes stopped, or
- * export twice and compare.
+ * to another tool or keeping an archive.
+ *
+ * Pages follow `createdAt`, and the cursor names the last row returned, so a
+ * row deleted mid-export (a member leaving, say) can't make a later row skip.
+ * Rows that share a `createdAt` have no fixed order between pages, but none is
+ * skipped. A row inserted mid-export is picked up if its `createdAt` is at or
+ * after the page you're on; one backdated behind it (an import, say) is not.
  * Presence (`inboxPresence`) isn't exported; it's a minute-level heartbeat.
+ *
+ * A cursor from an earlier release (a bare offset) is rejected: it can't be
+ * resumed without skipping rows. Start over with no cursor and keep one copy
+ * of each `id`.
  */
 export async function exportNotificationsData(
   auth: AuthWithContext,
   options: ExportNotificationsDataOptions = {},
 ): Promise<{ notifications: ExportedNotification[]; cursor: string | null }> {
   const context = await inboxContext(auth, "exportNotificationsData");
+  const adapter = await currentAdapter(context);
   const fail = (message: string) =>
     new Error(`[@byo-oss/notifications] exportNotificationsData: ${message}`);
   const limit = options.limit ?? 500;
@@ -211,30 +298,45 @@ export async function exportNotificationsData(
     if (!options.organizationId) throw fail("organizationId is empty");
     where.push({ field: "organizationId", value: options.organizationId });
   }
-  // an offset, not "id > last": adapters disagree on how strings sort (the
-  // memory adapter sorts with localeCompare but compares with >)
-  const offset = options.cursor ? Number.parseInt(options.cursor, 10) : 0;
-  if (!Number.isInteger(offset) || offset < 0) {
-    throw fail(`invalid cursor: ${options.cursor}`);
+  let after: ExportCursor | null = null;
+  if (options.cursor) {
+    if (/^\d+$/.test(options.cursor)) {
+      throw fail(
+        "cursor is an offset from an earlier release and can't be resumed safely; start over with no cursor and keep one copy of each id",
+      );
+    }
+    after = decodeCursor(options.cursor);
+    if (!after) throw fail(`invalid cursor: ${options.cursor}`);
   }
-  const page = await context.adapter.findMany<Notification>({
+  const from = after ? new Date(after.t) : null;
+  if (from) where.push({ field: "createdAt", operator: "gte", value: from });
+  // ids already exported at `from` come back in the window too, so the window
+  // always holds `limit + 1` rows not yet exported when that many remain
+  const exported = new Set(after?.ids ?? []);
+  const page = await adapter.findMany<Notification>({
     model: "notification",
     where,
-    limit: limit + 1,
-    offset,
-    sortBy: { field: "id", direction: "asc" },
+    limit: limit + 1 + exported.size,
+    sortBy: { field: "createdAt", direction: "asc" },
   });
-  const rows = page.slice(0, limit);
-  if (rows.length === 0) return { notifications: [], cursor: null };
+  const fresh = page.filter((n) => !exported.has(n.id));
+  if (fresh.length === 0) return { notifications: [], cursor: null };
+  // the first `limit` unexported rows, so nothing unexported sorts before the
+  // last one returned
+  const rows = fresh.slice(0, limit);
+  rows.sort(
+    (a, b) =>
+      timeOf(a) - timeOf(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
 
   const [users, deliveries] = await Promise.all([
-    findManyIn<{ id: string; email: string }>(context, {
+    findManyIn<{ id: string; email: string }>(adapter, {
       model: "user",
       field: "id",
       values: rows.map((n) => n.userId),
       select: ["id", "email"],
     }),
-    findManyIn<NotificationDelivery>(context, {
+    findManyIn<NotificationDelivery>(adapter, {
       model: "notificationDelivery",
       field: "notificationId",
       values: rows.map((n) => n.id),
@@ -250,6 +352,9 @@ export async function exportNotificationsData(
         .filter((d) => d.notificationId === notification.id)
         .map(serialize),
     })),
-    cursor: page.length > limit ? String(offset + limit) : null,
+    cursor:
+      fresh.length > limit
+        ? encodeCursor(cursorAfter(rows, from, exported))
+        : null,
   };
 }

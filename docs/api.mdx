@@ -26,6 +26,10 @@ Returns `{ count, notifications }`.
 
 See [Notify an organization](/docs/notifications/organizations) for the fan-out rules.
 
+<Next>
+Inside a better-auth transaction (`runWithTransaction`, as in a `@better-auth/scim` projection), the notification and delivery rows are written in that transaction and commit or roll back with it. Nothing is sent inside the call: the emails go out from `processDeliveries` after the commit.
+</Next>
+
 ### `auth.api.processDeliveries`
 
 Sends due email deliveries. Call it from a cron. The optional body is `{ limit }`, which overrides `batchSize`.
@@ -75,4 +79,8 @@ These are functions, not endpoints. Use them in your own scripts and hooks.
 | `deleteOrganizationData(auth, organizationId)` | Deletes an org's notifications and their deliveries. Returns `{ notifications }`, the count |
 | `deleteMemberData(auth, { userId, organizationId })` | Deletes one member's notifications in one org. Returns `{ notifications }` |
 | `exportNotificationsData(auth, { organizationId?, cursor?, limit? })` | One page (500 by default) of notifications, each with its `deliveries` and the user's `userEmail`, as plain JSON with ISO dates. Returns `{ notifications, cursor }`. Pass `cursor` back until it's `null`. A row deleted mid-export (a member leaving, say) can make the next page skip one, so export with writes stopped |
+
+<Next>
+`exportNotificationsData` pages by `createdAt` and resumes after the last row it returned, so a row deleted mid-export no longer makes the next page skip one. The cursor is still opaque. A cursor from an earlier release (a bare number) throws: start over with no cursor and keep one copy of each `id`. See [Upgrading](/docs/notifications/upgrading#export-cursor).
+</Next>
 

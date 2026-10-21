@@ -46,6 +46,12 @@ A channel is any object with a `deliver({ notification, user, appUrl })` method 
 
 A throw retries. Throw `PermanentDeliveryError` (or any error with `permanent: true`) for a send that can never succeed, such as an invalid address, and the delivery fails at once.
 
+<Next>
+`wrapsEmail` does this for a recipient it can't send to. When `@wraps.dev/email` rejects `to` as missing or malformed, the delivery is marked `failed` at once, with the SDK's message in `detail`. Throttling, network errors and SES errors still retry, and so do account and sender problems (sending paused, an unverified sender domain, missing credentials), because fixing them clears the backlog without touching the recipient.
+
+SES doesn't report a bounce or a suppressed address as a send error. It accepts the email, and the bounce arrives later as an event. Those deliveries show as `sent`. To stop emailing an address that bounces, check the SES suppression list in your own code.
+</Next>
+
 ## Read and seen both cancel it
 
 Clicking a notification marks it read. An unread row in the open panel is marked *seen* (`seenAt`) once at least half of it has been on screen for a second while the tab is visible. Rows below the scroll, or a panel flicked open and shut, don't count.
@@ -75,6 +81,10 @@ export async function GET() {
 ```
 
 Emails that are due right away (an away user, a rule with no delay) are sent inside `notify` when better-auth has a background task handler (`advanced: { backgroundTasks: { handler: waitUntil } }`) and the batch is 25 or fewer. Otherwise, including large org fan-outs, they go out on the next sweep.
+
+<Next>
+`notify` called inside a better-auth transaction (`runWithTransaction`) never sends inside the call. Its delivery rows commit with the transaction, and the next sweep sends them once it has committed. An email is never sent for a notification whose transaction rolls back, so the sweep must be running for these emails to go out.
+</Next>
 
 Each sweep handles `batchSize` deliveries (100 by default) and returns `hasMore` when more are due.
 

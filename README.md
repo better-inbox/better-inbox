@@ -108,6 +108,8 @@ await auth.api.notify({
 
 `notify` is server-only: callable through `auth.api`, never exposed as an HTTP route.
 
+Inside a better-auth transaction (`runWithTransaction`, as in a `@better-auth/scim` projection), `notify` writes its notification and delivery rows in that transaction, so they commit or roll back with it. No email goes out for it until the transaction commits: the next `processDeliveries` sweep sends it.
+
 ## Notify a whole organization
 
 With the better-auth [organization plugin](https://better-auth.com/docs/plugins/organization) enabled, address an org instead of a user. One notification is created per member (fan-out on write), each stamped with `organizationId`:
@@ -175,6 +177,8 @@ await deleteMemberData(auth, { userId, organizationId });
 
 `organizationId` has no foreign key, because the organization plugin is optional. These functions do what a cascade would. Call them too if your own `organizationHooks` (`afterDeleteOrganization`, `afterRemoveMember`) throw: that error replaces the response the plugin reads, so its cleanup skips. A notification fanned out at the moment its org is deleted can also survive; running `deleteOrganizationData` again is safe.
 
+Called inside a better-auth transaction (`runWithTransaction`, as in a `@better-auth/scim` projection deprovisioning a member), they run in it: their deletes commit or roll back with the rest of it.
+
 ## Email if unread
 
 Route a notification type to email, and it is emailed only if nobody has read or seen it in the app first. The in-app row is always written; email is a follow-up to it.
@@ -204,7 +208,7 @@ inbox({
 });
 ```
 
-`wrapsEmail` sends through [`@wraps.dev/email`](https://wraps.dev) from your own AWS SES account, resolving credentials from the environment. Pass `client: new WrapsEmail({ region, ... })` to configure it, and `render: ({ notification, user, appUrl }) => ({ subject, html, text })` to replace the default email (title, body and a View button). A channel is any `{ deliver({ notification, user, appUrl }) }` that throws on failure, so other providers are a few lines. A throw retries; throw `PermanentDeliveryError` (or any error with `permanent: true`) for a send that can never succeed, such as an invalid address, and the delivery fails at once.
+`wrapsEmail` sends through [`@wraps.dev/email`](https://wraps.dev) from your own AWS SES account, resolving credentials from the environment. Pass `client: new WrapsEmail({ region, ... })` to configure it, and `render: ({ notification, user, appUrl }) => ({ subject, html, text })` to replace the default email (title, body and a View button). A channel is any `{ deliver({ notification, user, appUrl }) }` that throws on failure, so other providers are a few lines. A throw retries; throw `PermanentDeliveryError` (or any error with `permanent: true`) for a send that can never succeed, such as an invalid address, and the delivery fails at once. `wrapsEmail` does this for a missing or malformed recipient address; SES reports bounces and suppressed addresses later, as events, so those still show as `sent`.
 
 **Read and seen both cancel it.** Clicking a notification marks it read. An unread row in the open panel is marked *seen* (`seenAt`) once at least half of it has been on screen for a second while the tab is visible. Rows below the scroll, or a panel flicked open and shut, don't count. Seen doesn't touch the badge or `read`, but it does cancel a pending email. For alerts whose email is the record, such as security events, set `cancelIfRead: false` and it goes out regardless.
 
@@ -222,7 +226,7 @@ export async function GET() {
 }
 ```
 
-Emails that are due right away (an away user, a rule with no delay) are sent inside `notify` when better-auth has a background task handler (`advanced: { backgroundTasks: { handler: waitUntil } }`) and the batch is 25 or fewer. Otherwise, including large org fan-outs, they go out on the next sweep. Each sweep handles `batchSize` deliveries (100) and returns `hasMore` when more are due.
+Emails that are due right away (an away user, a rule with no delay) are sent inside `notify` when better-auth has a background task handler (`advanced: { backgroundTasks: { handler: waitUntil } }`) and the batch is 25 or fewer. Otherwise, including large org fan-outs, and any `notify` inside a better-auth transaction, they go out on the next sweep. Each sweep handles `batchSize` deliveries (100) and returns `hasMore` when more are due.
 
 **Delivery is at-least-once.** Each delivery is claimed atomically before it's sent, so overlapping sweeps don't double-send. A failed send retries with backoff (1 minute, doubling, up to an hour) and is marked `failed` after `maxAttempts` (5). A worker that dies mid-send has its delivery retried five minutes later, so a crash after SES accepted the email can send it twice.
 
@@ -279,7 +283,7 @@ Server-only functions (not endpoints), for your own scripts and hooks:
 |----------|-------------|
 | `deleteOrganizationData(auth, organizationId)` | Deletes an org's notifications and their deliveries → `{ notifications }` (the count) |
 | `deleteMemberData(auth, { userId, organizationId })` | Deletes one member's notifications in one org → `{ notifications }` |
-| `exportNotificationsData(auth, { organizationId?, cursor?, limit? })` | One page (500 by default) of notifications, each with its `deliveries` and the user's `userEmail`, as plain JSON with ISO dates → `{ notifications, cursor }`. Pass `cursor` back until it's `null`. A row deleted mid-export (a member leaving, say) can make the next page skip one, so export with writes stopped |
+| `exportNotificationsData(auth, { organizationId?, cursor?, limit? })` | One page (500 by default) of notifications, each with its `deliveries` and the user's `userEmail`, as plain JSON with ISO dates → `{ notifications, cursor }`. Pass `cursor` back until it's `null`. Pages follow `createdAt`, so a row deleted mid-export (a member leaving, say) doesn't make the next page skip one. An offset cursor from an earlier release throws; start over with no cursor |
 
 ### React (`@byo-oss/notifications/react`)
 

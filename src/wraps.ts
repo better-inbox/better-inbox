@@ -1,4 +1,8 @@
-import type { DeliveryContext, InboxChannel } from "./delivery";
+import {
+  PermanentDeliveryError,
+  type DeliveryContext,
+  type InboxChannel,
+} from "./delivery";
 
 export type RenderedEmail = { subject: string; html: string; text: string };
 
@@ -50,17 +54,42 @@ export function wrapsEmail(options: WrapsEmailChannelOptions): InboxChannel {
       const { subject, html, text } = await (options.render ?? renderEmail)(
         ctx,
       );
-      // WrapsEmail.send throws on SES errors, which is what lets the delivery retry
-      await (await getClient()).send({
-        from: options.from,
-        to: ctx.user.email,
-        subject,
-        html,
-        text,
-        ...(options.replyTo ? { replyTo: options.replyTo } : {}),
-      });
+      try {
+        await (await getClient()).send({
+          from: options.from,
+          to: ctx.user.email,
+          subject,
+          html,
+          text,
+          ...(options.replyTo ? { replyTo: options.replyTo } : {}),
+        });
+      } catch (error) {
+        // a malformed recipient fails the same way every time. Everything else
+        // (throttling, network, SES and account errors) rethrows and retries.
+        if (isInvalidRecipient(error)) {
+          throw new PermanentDeliveryError(
+            error instanceof Error ? error.message : String(error),
+            { cause: error },
+          );
+        }
+        throw error;
+      }
     },
   };
+}
+
+/**
+ * True for the `ValidationError` that `@wraps.dev/email` throws before any
+ * network call when `to` is missing or not an address. Matched on the name and
+ * field because the SDK is loaded dynamically and may be a different copy.
+ */
+function isInvalidRecipient(error: unknown): boolean {
+  const { name, field } = (error ?? {}) as { name?: unknown; field?: unknown };
+  return (
+    name === "ValidationError" &&
+    typeof field === "string" &&
+    /^to(\[\d+\])?$/.test(field)
+  );
 }
 
 const escapeHtml = (value: string) =>

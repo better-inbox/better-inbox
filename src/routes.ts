@@ -1,4 +1,4 @@
-import type { AuthContext, Where } from "better-auth";
+import { type AuthContext, getCurrentAdapter, type Where } from "better-auth";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
 import { chunk } from "./adapter";
@@ -38,6 +38,12 @@ const notifyBodySchema = z
     { message: INBOX_ERROR_CODES.FAN_OUT_OPTIONS_WITHOUT_USER.message },
   );
 
+/**
+ * Creates the notifications and their delivery rows. Inside a better-auth
+ * transaction (`runWithTransaction`) they join it and commit or roll back with
+ * it, and no email goes out until the transaction has committed: the next
+ * `processDeliveries` sweep sends it.
+ */
 export const notify = (options: ResolvedInboxOptions) =>
   createAuthEndpoint.serverOnly(
     {
@@ -47,14 +53,17 @@ export const notify = (options: ResolvedInboxOptions) =>
     async (ctx) => {
       const { userId, organizationId, roles, excludeUserIds, ...payload } =
         ctx.body;
+      // the caller's transaction when notify runs inside runWithTransaction, so
+      // these rows commit or roll back with it; resolved once, used throughout
+      const adapter = await getCurrentAdapter(ctx.context.adapter);
 
       const created = async (notifications: Notification[]) => {
-        await scheduleDeliveries(ctx.context, notifications, options);
+        await scheduleDeliveries(ctx.context, adapter, notifications, options);
         return { count: notifications.length, notifications };
       };
 
       const createFor = (targetUserId: string) =>
-        ctx.context.adapter.create<Omit<Notification, "id">, Notification>({
+        adapter.create<Omit<Notification, "id">, Notification>({
           model: "notification",
           data: {
             userId: targetUserId,
@@ -80,7 +89,7 @@ export const notify = (options: ResolvedInboxOptions) =>
       }
 
       if (userId) {
-        const membership = await ctx.context.adapter.findOne<{ id: string }>({
+        const membership = await adapter.findOne<{ id: string }>({
           model: "member",
           where: [
             { field: "userId", value: userId },
@@ -96,7 +105,7 @@ export const notify = (options: ResolvedInboxOptions) =>
         return created([await createFor(userId)]);
       }
 
-      const members = await ctx.context.adapter.findMany<{
+      const members = await adapter.findMany<{
         userId: string;
         role: string;
       }>({
