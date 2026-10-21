@@ -76,11 +76,9 @@ await deleteMemberData(auth, { userId, organizationId });
 
 `organizationId` has no foreign key, because the organization plugin is optional. These functions do what a cascade would. Call them too if your own `organizationHooks` (`afterDeleteOrganization`, `afterRemoveMember`) throw: that error replaces the response the plugin reads, so its cleanup skips. A notification fanned out at the moment its org is deleted can also survive. Running `deleteOrganizationData` again is safe.
 
-<Next>
 Called inside a better-auth transaction, they run in it: their deletes commit or roll back with the rest of it. That's how to clean up when a member is removed inside one, for example in a `@better-auth/scim` projection, which runs in the directory's transaction when it deprovisions someone:
 
 ```ts title="lib/auth.ts"
 // in your SCIM projection, after deleting the member row with `database`
 await deleteMemberData(auth, { userId, organizationId });
 ```
-</Next>

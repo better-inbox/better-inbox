@@ -7,16 +7,6 @@ order: 3
 
 Each section covers one change. Read the sections between your current version and the latest. The default docs describe the latest published release. Sections marked next describe main, which isn't published yet.
 
-<Next>
-## 0.9
-
-No schema change and no new options. Behaviour changes:
-
-- **Export cursor.** `exportNotificationsData` now pages by `createdAt` and resumes after the last row it returned, instead of by offset. A row deleted mid-export can no longer make the next page skip one, so you don't need to stop writes first. Rows inserted mid-export are included if their `createdAt` is at or after the page you're on; a row backdated behind it (an import, say) is not. A cursor from an earlier release (a bare number) now throws, because it can't be resumed safely. Start the export again with no cursor, and keep one copy of each `id`, since rows exported before the restart come back.
-- **Inside a better-auth transaction.** `notify`, `deleteOrganizationData`, `deleteMemberData` and `exportNotificationsData` now run in the caller's transaction (`runWithTransaction`), so their writes commit and roll back with it. Before, they wrote outside it, and on a one-connection database (PGlite) they waited on it forever. `notify` never sends inside a transaction: emails due right away wait for the next `processDeliveries` run. If you deferred `notify` until after the transaction yourself, you can call it directly now.
-- **`wrapsEmail`.** A missing or malformed recipient now fails at once with `PermanentDeliveryError` instead of retrying until `maxAttempts`. Bounces and suppressions still arrive later as SES events, not as send errors.
-</Next>
-
 ## From better-inbox (0.7)
 
 The package was renamed from `better-inbox` to `@byo-oss/notifications` in 0.7. The API is the same. Change your imports:
@@ -53,3 +43,10 @@ markSeen: ({ ids }) => authClient.inbox.markSeen({ ids })
 
 - The package ships an agent skill, `byo-notifications`, in `skills/`. Install it with `npx skills add byo-oss/notifications`, or run `npx skills sync` to pick it up from `node_modules`. See [Set up with a coding agent](/docs/notifications/quickstart#set-up-with-a-coding-agent). Nothing else changed.
 
+## 0.9
+
+No schema change and no new options. Behaviour changes:
+
+- **Export cursor.** `exportNotificationsData` now pages by `createdAt` and resumes after the last row it returned, instead of by offset. A row deleted mid-export can no longer make the next page skip one, so you don't need to stop writes first. Rows inserted mid-export are included if their `createdAt` is at or after the page you're on; a row backdated behind it (an import, say) is not. A cursor from an earlier release (a bare number) now throws, because it can't be resumed safely. Start the export again with no cursor, and keep one copy of each `id`, since rows exported before the restart come back.
+- **Inside a better-auth transaction.** `notify`, `deleteOrganizationData`, `deleteMemberData` and `exportNotificationsData` now run in the caller's transaction (`runWithTransaction`), so their writes commit and roll back with it. Before, they wrote outside it, and on a one-connection database (PGlite) they waited on it forever. `notify` never sends inside a transaction: emails due right away wait for the next `processDeliveries` run. If you deferred `notify` until after the transaction yourself, you can call it directly now.
+- **`wrapsEmail`.** A missing or malformed recipient now fails at once with `PermanentDeliveryError` instead of retrying until `maxAttempts`. Bounces and suppressions still arrive later as SES events, not as send errors.
