@@ -27,10 +27,12 @@ index("notification_delivery_throttle_idx").on(table.userId, table.type, table.c
 
 ## Organization cleanup and export
 
-Organization cleanup and export look notifications up by org and deliveries by notification. Postgres doesn't index foreign keys on its own:
+Organization cleanup looks notifications up by org, and export pages through an org's notifications by time. Both look deliveries up by notification. Postgres doesn't index foreign keys on its own:
 
 ```ts
-index("notification_org_idx").on(table.organizationId)
+index("notification_org_created_idx").on(table.organizationId, table.createdAt)
 index("notification_delivery_notification_idx").on(table.notificationId)
+// only if you export without an organizationId:
+index("notification_created_idx").on(table.createdAt)
 ```
 
