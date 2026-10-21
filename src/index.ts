@@ -1,7 +1,22 @@
-import type { BetterAuthPlugin, InferOptionSchema } from "better-auth";
+import type { ByoAuth, ByoEventHandler, ByoPlugin } from "@byo-oss/core";
+import type {
+  AuthContext,
+  BetterAuthPlugin,
+  InferOptionSchema,
+} from "better-auth";
 import { mergeSchema } from "better-auth/db";
-import { deleteUserRows, organizationCleanupHook } from "./data";
-import type { DeliveryRule, InboxChannel, ShouldDeliver } from "./delivery";
+import {
+  deleteMemberData as deleteInboxMemberData,
+  deleteOrganizationData as deleteInboxOrgData,
+  deleteUserRows,
+  organizationCleanupHook,
+} from "./data";
+import {
+  type DeliveryRule,
+  type InboxChannel,
+  processDueDeliveries,
+  type ShouldDeliver,
+} from "./delivery";
 import { INBOX_ERROR_CODES } from "./error-codes";
 import {
   listNotifications,
@@ -53,10 +68,18 @@ export type InboxOptions<Channel extends string = string> = {
   /**
    * Delete a member's notifications in an organization when they're removed
    * or leave, and an organization's when it's deleted. Turn off to keep them,
-   * e.g. for an audit trail; `deleteOrganizationData` still works.
+   * e.g. for an audit trail; `deleteOrganizationData` still works. Off also
+   * leaves notifications out of `@byo-oss/core`'s
+   * `deleteOrganizationData`/`deleteMemberData` fan-out.
    * @default true
    */
   organizationCleanup?: boolean;
+  /**
+   * Receives `notifications.*` events after the write commits. Errors are
+   * logged, never thrown. Build it with `createEventBus` from `@byo-oss/core`.
+   * Don't route these events back into `notify`.
+   */
+  onEvent?: ByoEventHandler;
   schema?: InferOptionSchema<typeof schema>;
 };
 
@@ -66,6 +89,11 @@ export const inbox = <Channel extends string = string>(
   const channels: Record<string, InboxChannel> = options.channels ?? {};
   const routes = options.routes ?? {};
   for (const [type, rules] of Object.entries(routes)) {
+    if (type.startsWith("notifications.")) {
+      throw new Error(
+        `[@byo-oss/notifications] routes["${type}"] uses a reserved type: types starting with "notifications." are the plugin's own events`,
+      );
+    }
     const seen = new Set<string>();
     for (const rule of rules) {
       if (!channels[rule.channel]) {
@@ -94,6 +122,7 @@ export const inbox = <Channel extends string = string>(
     leaseMs: 5 * 60_000,
     // above this many due-now deliveries, notify leaves them to the sweep
     immediateLimit: 25,
+    onEvent: options.onEvent,
   };
   return {
     id: "inbox",
@@ -134,7 +163,30 @@ export const inbox = <Channel extends string = string>(
     },
     $ERROR_CODES: INBOX_ERROR_CODES,
     options,
-  } satisfies BetterAuthPlugin;
+    // reached through @byo-oss/core: sweepAll, deleteOrganizationData and
+    // deleteMemberData. With organizationCleanup off the cleanups are left
+    // out, so core's fan-out keeps these rows too.
+    byo: {
+      sweep: async (auth: ByoAuth) =>
+        processDueDeliveries((await auth.$context) as AuthContext, opts),
+      ...(options.organizationCleanup === false
+        ? {}
+        : {
+            deleteOrganizationData: async (
+              auth: ByoAuth,
+              organizationId: string,
+            ) => {
+              await deleteInboxOrgData(auth, organizationId);
+            },
+            deleteMemberData: async (
+              auth: ByoAuth,
+              input: { userId: string; organizationId: string },
+            ) => {
+              await deleteInboxMemberData(auth, input);
+            },
+          }),
+    },
+  } satisfies ByoPlugin<BetterAuthPlugin>;
 };
 
 export {
@@ -156,4 +208,11 @@ export {
   exportNotificationsData,
 } from "./data";
 export { INBOX_ERROR_CODES } from "./error-codes";
+export {
+  type DeliveryFailedEvent,
+  NOTIFICATIONS_EVENT_TYPES,
+  type NotificationCreatedEvent,
+  type NotificationsEvent,
+  type NotificationsEventType,
+} from "./events";
 export type { DeliveryStatus, Notification, NotificationDelivery } from "./schema";

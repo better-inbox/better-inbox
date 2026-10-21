@@ -36,6 +36,12 @@ Returns `{ sent, skipped, retrying, failed, hasMore }`.
 
 See [Email if unread](/docs/notifications/email#run-the-sweep-on-a-schedule).
 
+<Next>
+
+`notify` rejects a `type` that starts with `notifications.` with `BAD_REQUEST` (`RESERVED_NOTIFICATION_TYPE`): those are the plugin's own [events](/docs/notifications/events). Both endpoints emit events through `inbox({ onEvent })`.
+
+</Next>
+
 ## Own-row endpoints
 
 ### `auth.api.listNotifications`
@@ -77,6 +83,12 @@ These are functions, not endpoints. Use them in your own scripts and hooks.
 | `deleteOrganizationData(auth, organizationId)` | Deletes an org's notifications and their deliveries. Returns `{ notifications }`, the count |
 | `deleteMemberData(auth, { userId, organizationId })` | Deletes one member's notifications in one org. Returns `{ notifications }` |
 | `exportNotificationsData(auth, { organizationId?, cursor?, limit? })` | One page (500 by default) of notifications, each with its `deliveries` and the user's `userEmail`, as plain JSON with ISO dates. Returns `{ notifications, cursor }`. Pass `cursor` back until it's `null` |
+
+<Next>
+
+The plugin also declares `byo` hooks, so [`@byo-oss/core`](https://github.com/byo-oss/core) reaches it. `sweepAll(auth)` runs the same sweep as `processDeliveries`, so one cron route for every BYO plugin can replace the `processDeliveries` call. Core's `deleteOrganizationData` and `deleteMemberData` call the functions above. With `organizationCleanup: false` only the sweep is declared.
+
+</Next>
 
 `exportNotificationsData` pages by `createdAt` and resumes after the last row it returned, so a row deleted mid-export (a member leaving, say) doesn't make the next page skip one. The cursor is opaque. A cursor from an earlier release (a bare number) throws: start over with no cursor and keep one copy of each `id`. See [Upgrading](/docs/notifications/upgrading#09).
 

@@ -13,7 +13,7 @@ The API reference is `node_modules/@byo-oss/notifications/llms.txt` once the pac
 
 Work through these in order. Each step ends on a check; move on only when it holds.
 
-1. **Install.** `npm install @byo-oss/notifications` (use the repo's package manager). Done when it's in the dependencies of the package that holds the better-auth config, and of the web app if that's a separate package.
+1. **Install.** `npm install @byo-oss/notifications @better-auth/core` (use the repo's package manager). Requires better-auth 1.7.7+. Install `@better-auth/core` at the same version as `better-auth`. Done when both are in the dependencies of the package that holds the better-auth config, and of the web app if that's a separate package.
 
 2. **Server plugin.** Add `inbox()` from `@byo-oss/notifications` to `betterAuth({ plugins })`. If the app uses the organization plugin, list it too; org fan-out and org cleanup come from it. Done when the app typechecks.
 
@@ -30,13 +30,16 @@ Work through these in order. Each step ends on a check; move on only when it hol
 
 6. **Send.** Call `auth.api.notify({ body: { userId, type, title, href } })` from server code where the event happens (a server action, webhook handler, job). It is server-only, never an HTTP route. `type` is a dotted event name (`comment.reply`, `billing.payment_failed`) that later picks email routes. Done when a notification sent in dev shows in the bell.
 
-7. **Email, only if asked for.** Install `@wraps.dev/email`, then add `appUrl`, `channels: { email: wrapsEmail({ from }) }` and `routes` keyed by `type` (see `llms.txt`). Then add a scheduled call to `auth.api.processDeliveries({})`, every minute, in whatever runs the app's cron. Without it, delayed emails and retries never go out. Done when a routed notification produces a `sent` delivery in dev.
+7. **Email, only if asked for.** Install `@wraps.dev/email`, then add `appUrl`, `channels: { email: wrapsEmail({ from }) }` and `routes` keyed by `type` (see `llms.txt`). Then add a scheduled call to `auth.api.processDeliveries({})`, every minute, in whatever runs the app's cron. Without it, delayed emails and retries never go out. If the app already uses `@byo-oss/core`, its `sweepAll(auth)` route runs this sweep too and can replace the `processDeliveries` call. Done when a routed notification produces a `sent` delivery in dev.
+
+8. **Events, only if asked for.** Pass `onEvent` to `inbox()`, built with `createEventBus` from `@byo-oss/core` (see `llms.txt` for the event table). Handlers run after the write commits; inside `runWithTransaction`, after its commit. Never route `notifications.*` events back into `notify`. Done when a `notify` in dev reaches the handler with `notifications.notification.created`.
 
 ## Rules
 
 - Address people by better-auth user id and organizations by `organizationId`. A recipient list of email addresses is a sign the call belongs elsewhere.
 - App code reaches the package through `auth.api.*`, the client, the React exports and the exported functions. Leave its tables to it.
 - Organization changes clean up after themselves (delete, remove member, leave). Deletes made outside the organization plugin's endpoints call `deleteOrganizationData(auth, orgId)` or `deleteMemberData(auth, { userId, organizationId })`.
+- Never route `notifications.*` events (from `inbox({ onEvent })`) back into `notify`; it rejects those types.
 - Every UI string has a `labels` override; reach for it before forking a component.
 
 ## Custom channels

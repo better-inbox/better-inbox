@@ -1,5 +1,7 @@
+import type { ByoEventHandler } from "@byo-oss/core";
 import type { AuthContext, DBTransactionAdapter, User, Where } from "better-auth";
-import { findManyIn } from "./adapter";
+import { findManyIn, IN_CHUNK } from "./adapter";
+import { deliveryFailed, emit } from "./events";
 import type {
   InboxPresence,
   Notification,
@@ -96,6 +98,7 @@ export type ResolvedDeliveryOptions = {
   batchSize: number;
   leaseMs: number;
   immediateLimit: number;
+  onEvent: ByoEventHandler | undefined;
 };
 
 const PRESENCE_WRITE_INTERVAL = 60_000;
@@ -276,17 +279,15 @@ export async function processDueDeliveries(
       value: new Date(now.getTime() - options.leaseMs),
     },
   ];
+  const staleCapped = await failExhaustedLeases(context, options, stale, limit);
+  // guarded: an exhausted row the loop above didn't reach (the limit cap)
+  // stays "sending" for the next sweep instead of being retried past maxAttempts
   await context.adapter.updateMany({
     model: "notificationDelivery",
     where: [
       ...stale,
-      { field: "attempts", operator: "gte", value: options.maxAttempts },
+      { field: "attempts", operator: "lt", value: options.maxAttempts },
     ],
-    update: { status: "failed", detail: "send did not finish" },
-  });
-  await context.adapter.updateMany({
-    model: "notificationDelivery",
-    where: stale,
     update: { status: "pending" },
   });
 
@@ -300,7 +301,80 @@ export async function processDueDeliveries(
     limit: limit + 1,
   });
   const result = await attemptDeliveries(context, due.slice(0, limit), options);
-  return { ...result, hasMore: due.length > limit };
+  return { ...result, hasMore: due.length > limit || staleCapped };
+}
+
+/**
+ * Marks stale leases that have used up their attempts as failed, one row at a
+ * time, and emits `notifications.delivery.failed` (`"unfinished"`) for each.
+ * The per-row guarded update is the compare-and-swap: of two overlapping
+ * sweeps, exactly one moves (and reports) a row. Examines at most `limit` rows;
+ * returns true when it stopped at that cap with rows left, so the sweep
+ * reports `hasMore`.
+ */
+async function failExhaustedLeases(
+  context: AuthContext,
+  options: ResolvedDeliveryOptions,
+  stale: Where[],
+  limit: number,
+): Promise<boolean> {
+  const exhausted: Where[] = [
+    ...stale,
+    { field: "attempts", operator: "gte", value: options.maxAttempts },
+  ];
+  let examined = 0;
+  while (examined < limit) {
+    const take = Math.min(IN_CHUNK, limit - examined);
+    const page = await context.adapter.findMany<NotificationDelivery>({
+      model: "notificationDelivery",
+      where: exhausted,
+      limit: take + 1,
+    });
+    if (page.length === 0) return false;
+    const rows = page.slice(0, take);
+    examined += rows.length;
+    const capped = page.length > take && examined >= limit;
+
+    const organizationIds = options.onEvent
+      ? new Map(
+          (
+            await findManyIn<Notification>(context.adapter, {
+              model: "notification",
+              field: "id",
+              values: rows.map((row) => row.notificationId),
+            })
+          ).map((n) => [n.id, n.organizationId]),
+        )
+      : undefined;
+
+    let moved = 0;
+    for (const row of rows) {
+      const updated = await context.adapter.updateMany({
+        model: "notificationDelivery",
+        where: [{ field: "id", value: row.id }, ...exhausted],
+        update: { status: "failed", detail: "send did not finish" },
+      });
+      if (updated !== 1) continue;
+      moved++;
+      await emit(
+        options.onEvent,
+        context,
+        context.adapter,
+        deliveryFailed(row, {
+          organizationId: organizationIds?.get(row.notificationId),
+          attempts: row.attempts,
+          reason: "unfinished",
+        }),
+      );
+    }
+    // a page that moved nothing (row-level security, or another sweep took
+    // the rows) would come back unchanged: stop rather than spin, and don't
+    // report hasMore for rows this sweep can't move
+    if (moved === 0) return false;
+    if (capped) return true;
+    if (page.length <= take) return false;
+  }
+  return false;
 }
 
 const CONCURRENCY = 10;
@@ -436,8 +510,19 @@ async function attemptDelivery(
     context.logger.error(
       `[@byo-oss/notifications] ${delivery.channel} delivery ${delivery.id} failed: ${detail}`,
     );
-    if (isPermanent(error) || claimed.attempts >= options.maxAttempts) {
+    const permanent = isPermanent(error);
+    if (permanent || claimed.attempts >= options.maxAttempts) {
       await finish({ status: "failed", detail });
+      await emit(
+        options.onEvent,
+        context,
+        context.adapter,
+        deliveryFailed(delivery, {
+          organizationId: notification.organizationId,
+          attempts: claimed.attempts,
+          reason: permanent ? "permanent" : "max_attempts",
+        }),
+      );
       return "failed";
     }
     const backoff = Math.min(

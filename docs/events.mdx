@@ -1,0 +1,85 @@
+---
+title: Events
+description: The events the plugin emits through onEvent, when they fire, and what they never carry.
+group: reference
+order: 4
+---
+
+<Next>
+
+Pass `onEvent` and the plugin reports what happened as `ByoEvent`s from [`@byo-oss/core`](https://github.com/byo-oss/core). Other packages (an activity feed, metrics, a bridge to another tool) can react without calling into this one.
+
+## Event types
+
+| type | userId | organizationId | subject | data |
+|------|--------|----------------|---------|------|
+| `notifications.notification.created` | the recipient | the notification's, when set | `{ type: "notification", id }` | `{ notificationId, notificationType }` |
+| `notifications.delivery.failed` | the recipient | the notification's, when set | `{ type: "notificationDelivery", id }` | `{ deliveryId, notificationId, notificationType, channel, attempts, reason }` |
+
+`actorId` is always `null`: `notify` is server-only and doesn't know who caused it. The event that led to the `notify` call names the actor.
+
+`reason` is one of:
+
+- `"permanent"`: the channel threw a `PermanentDeliveryError` (or an error with `permanent: true`).
+- `"max_attempts"`: it kept failing until `maxAttempts`.
+- `"unfinished"`: a send outlived its five-minute lease with no attempts left.
+
+`NOTIFICATIONS_EVENT_TYPES` lists the types, and `NotificationsEvent` is their union. `NotificationCreatedEvent` and `DeliveryFailedEvent` type each one.
+
+## Subscribe
+
+```ts title="lib/auth.ts"
+import { createEventBus } from "@byo-oss/core";
+import { inbox } from "@byo-oss/notifications";
+
+inbox({
+  onEvent: createEventBus([
+    (event) => {
+      if (event.type === "notifications.delivery.failed") {
+        metrics.increment("notification_email_failed", { reason: String(event.data.reason) });
+      }
+    },
+  ]),
+});
+```
+
+## When they fire
+
+An event fires once the write it describes has committed.
+
+- Outside a transaction, `notify` calls the handler before it returns, and so does `processDeliveries` for the failures it records.
+- Inside a better-auth transaction, `notify`'s events wait until it commits and are dropped if it rolls back. They're handled before `runWithTransaction` returns.
+
+Join with `runWithTransaction` from `@better-auth/core/context`. A transaction you open yourself with `adapter.transaction(trx => …)` isn't seen as one, so events would fire before it commits.
+
+In your own `runWithTransaction`, pass `{ onAfterCommitHookError }`. Without it, an earlier after-commit hook that throws (a better-auth `databaseHooks` `after` hook, say) makes `runWithTransaction` throw and skip the hooks queued after it, including these events:
+
+```ts
+await runWithTransaction(adapter, work, {
+  onAfterCommitHookError: (error) => console.error(error),
+});
+```
+
+## Errors
+
+A handler that throws or rejects is logged (`onEvent failed for <type>`). It never fails `notify` or the sweep.
+
+## Volume, order and duplicates
+
+- **One event per row.** An org fan-out to N members emits N events, each awaited in turn, inside `notify` or after the commit. `maxFanout` bounds it. Outside a transaction, a fan-out that fails part way keeps the rows it wrote, without events for them.
+- **No ordering.** With a background task handler, an immediate send can report `delivery.failed` before `notify` has finished emitting `created`.
+- **Failures can repeat.** `delivery.failed` can arrive twice for one delivery: a send that outlives its five-minute lease is retried or failed as `unfinished` while the original send still finishes. It's the same cause as in [Email if unread](/docs/notifications/email): a crash after SES accepted the email can send it twice.
+
+## No content
+
+Events carry ids, the type, the channel, the attempt count and the reason. Never the `title`, `body`, `href` (it can carry tokens), your `data`, or a channel's error text (provider errors can contain addresses). Look the row up by id if you need more.
+
+## Adapters without transactions
+
+Events fire at once, and a throw keeps both the rows and the events. A third-party adapter whose `transaction` builds a new adapter object without real rollback drops the events on a throw while its rows stay.
+
+## Don't route them back into notify
+
+A forwarder that turns every event into a notification would loop. `notify` rejects types that start with `notifications.` (`RESERVED_NOTIFICATION_TYPE`), and a `routes` key with that prefix throws when the plugin is created. A forwarder that renames the type isn't caught, so filter `notifications.*` out yourself.
+
+</Next>

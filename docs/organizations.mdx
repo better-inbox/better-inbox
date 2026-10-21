@@ -74,6 +74,12 @@ await deleteOrganizationData(auth, organizationId);
 await deleteMemberData(auth, { userId, organizationId });
 ```
 
+<Next>
+
+With [`@byo-oss/core`](https://github.com/byo-oss/core), call its `deleteOrganizationData` and `deleteMemberData` from your `organizationHooks` to clean up every BYO plugin at once. They reach this plugin too. When the plugin's own cleanup and core's fan-out both run, the second finds nothing and does nothing, so leave `organizationCleanup` on. `organizationCleanup: false` also leaves notifications out of core's fan-out: turn it off only to keep the rows, since then nothing deletes them.
+
+</Next>
+
 `organizationId` has no foreign key, because the organization plugin is optional. These functions do what a cascade would. Call them too if your own `organizationHooks` (`afterDeleteOrganization`, `afterRemoveMember`) throw: that error replaces the response the plugin reads, so its cleanup skips. A notification fanned out at the moment its org is deleted can also survive. Running `deleteOrganizationData` again is safe.
 
 Called inside a better-auth transaction, they run in it: their deletes commit or roll back with the rest of it. That's how to clean up when a member is removed inside one, for example in a `@better-auth/scim` projection, which runs in the directory's transaction when it deprovisions someone:

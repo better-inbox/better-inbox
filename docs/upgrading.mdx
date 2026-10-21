@@ -7,6 +7,21 @@ order: 3
 
 Each section covers one change. Read the sections between your current version and the latest. The default docs describe the latest published release. Sections marked next describe main, which isn't published yet.
 
+<Next>
+## 0.10
+
+No migration. Breaking:
+
+- **better-auth 1.7.7+.** The `better-auth` peer is now `^1.7.7`, and `@better-auth/core` is a new required peer. Install it at the same version as `better-auth`. Events use its after-commit hooks.
+- **Reserved types.** `notify` rejects types that start with `notifications.` (`RESERVED_NOTIFICATION_TYPE`), and a `routes` key with that prefix throws when the plugin is created. They're the plugin's own [events](/docs/notifications/events).
+
+New:
+
+- `onEvent`, with `notifications.notification.created` and `notifications.delivery.failed`, delivered after commit. See [Events](/docs/notifications/events).
+- `byo` hooks for `@byo-oss/core` (`sweepAll`, `deleteOrganizationData`, `deleteMemberData`). The cleanups are left out under `organizationCleanup: false`.
+- A stale send with no attempts left is now failed one row at a time, at most `limit` rows per sweep, and `hasMore` is `true` when more remain. Rows past that cap stay `sending` for the next sweep instead of being retried past `maxAttempts`.
+</Next>
+
 ## From better-inbox (0.7)
 
 The package was renamed from `better-inbox` to `@byo-oss/notifications` in 0.7. The API is the same. Change your imports:

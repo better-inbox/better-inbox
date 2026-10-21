@@ -22,6 +22,12 @@ npm install @byo-oss/notifications
 
 Using a coding agent? `npx skills add byo-oss/notifications` installs a skill that walks it through these steps (`npx skills sync` picks it up from `node_modules` too).
 
+Requires better-auth 1.7.7+. Install `@better-auth/core` at the same version as `better-auth`:
+
+```
+npm install @byo-oss/notifications @better-auth/core
+```
+
 **1. Add the plugin** to your better-auth config:
 
 ```ts
@@ -164,6 +170,8 @@ Fan-out is capped at 1,000 members by default (`inbox({ maxFanout })` to change)
 
 The plugin cleans up after the organization plugin's own endpoints: `/organization/delete` deletes the org's notifications, and `/organization/remove-member` and `/organization/leave` delete that member's notifications in that org. Their notifications elsewhere stay. Deliveries go with their notifications. Pass `organizationCleanup: false` to keep them, e.g. for an audit trail.
 
+With [`@byo-oss/core`](https://github.com/byo-oss/core), its `deleteOrganizationData` and `deleteMemberData` fan-out (called from your `organizationHooks`) reach this plugin too. When both run, the second finds nothing and does nothing, so leave the plugin's own cleanup on. `organizationCleanup: false` also leaves notifications out of core's fan-out; turn it off only to keep the rows, since then nothing deletes them.
+
 Deleting a user removes all of their rows: through foreign keys on SQL databases, and through a user-delete hook on adapters without them (memory, MongoDB).
 
 If you delete organizations or members some other way (a script, an admin tool, a direct database write), call the cleanup yourself:
@@ -234,6 +242,54 @@ Emails that are due right away (an away user, a rule with no delay) are sent ins
 
 Every delivery is a row in `notificationDelivery` (see [Schema](#schema)), with its status and the reason it was skipped or the last error.
 
+## Events
+
+Pass `onEvent` and the plugin reports what happened as [`ByoEvent`](https://github.com/byo-oss/core)s, so other packages (an activity feed, metrics, a bridge to another tool) can react without calling into this one:
+
+| type | userId | organizationId | subject | data |
+|------|--------|----------------|---------|------|
+| `notifications.notification.created` | the recipient | the notification's, when set | `{ type: "notification", id }` | `{ notificationId, notificationType }` |
+| `notifications.delivery.failed` | the recipient | the notification's, when set | `{ type: "notificationDelivery", id }` | `{ deliveryId, notificationId, notificationType, channel, attempts, reason }` |
+
+`actorId` is always `null`: `notify` is server-only and doesn't know who caused it. The event that led to the `notify` call names the actor. `reason` is `"permanent"` (the channel threw a `PermanentDeliveryError`), `"max_attempts"` (it kept failing) or `"unfinished"` (a send outlived its five-minute lease with no attempts left). `NOTIFICATIONS_EVENT_TYPES` lists the types, and `NotificationsEvent` is their union.
+
+```ts
+import { createEventBus } from "@byo-oss/core";
+import { inbox } from "@byo-oss/notifications";
+
+inbox({
+  onEvent: createEventBus([
+    (event) => {
+      if (event.type === "notifications.delivery.failed") {
+        metrics.increment("notification_email_failed", { reason: String(event.data.reason) });
+      }
+    },
+  ]),
+});
+```
+
+**After commit.** An event fires once the write it describes has committed. Outside a transaction, `notify` calls the handler before it returns, and so does `processDeliveries` for the failures it records. Inside a better-auth transaction, `notify`'s events wait until it commits and are dropped if it rolls back; they're handled before `runWithTransaction` returns. Join with `runWithTransaction` from `@better-auth/core/context`. A transaction you open yourself with `adapter.transaction(trx => …)` isn't seen as one, so events would fire before it commits.
+
+**Errors never reach you.** A handler that throws or rejects is logged (`onEvent failed for <type>`) and never fails `notify` or the sweep.
+
+**One event per row.** An org fan-out to N members emits N events, each awaited in turn, inside `notify` (or after the commit). `maxFanout` bounds it. Outside a transaction, a fan-out that fails part way keeps the rows it wrote, without events for them.
+
+**No ordering, and failures can repeat.** With a background task handler, an immediate send can report `delivery.failed` before `notify` has finished emitting `created`. `delivery.failed` can arrive twice for one delivery: a send that outlives its five-minute lease is retried or failed as `unfinished` while the original send still finishes. It's the same cause as in [Email if unread](#email-if-unread): a crash after SES accepted the email can send it twice.
+
+**No content.** Events carry ids, the type, the channel, the attempt count and the reason. Never the `title`, `body`, `href` (it can carry tokens), your `data`, or a channel's error text (provider errors can contain addresses). Look the row up by id if you need more.
+
+**Adapters without transactions.** Events fire at once, and a throw keeps both the rows and the events. A third-party adapter whose `transaction` builds a new adapter object without real rollback drops the events on a throw while its rows stay.
+
+**Don't route these events back into `notify`.** A forwarder that turns every event into a notification would loop. `notify` rejects types that start with `notifications.` (`RESERVED_NOTIFICATION_TYPE`), and a `routes` key with that prefix throws when the plugin is created. A forwarder that renames the type isn't caught, so filter `notifications.*` out yourself.
+
+**Tip.** In your own `runWithTransaction`, pass `{ onAfterCommitHookError }`. Without it, an earlier after-commit hook that throws (a better-auth `databaseHooks` `after` hook, say) makes `runWithTransaction` throw and skip the hooks queued after it, including these events:
+
+```ts
+await runWithTransaction(adapter, work, {
+  onAfterCommitHookError: (error) => console.error(error),
+});
+```
+
 ## Options
 
 `inbox(options)`:
@@ -248,7 +304,8 @@ Every delivery is a row in `notificationDelivery` (see [Schema](#schema)), with 
 | `maxAttempts` | number | `5` | Sends tried before a delivery is marked `failed` |
 | `batchSize` | number | `100` | Deliveries per `processDeliveries` call |
 | `maxFanout` | number | `1000` | Most members one organization `notify` may reach |
-| `organizationCleanup` | boolean | `true` | Delete notifications when an org is deleted or a member is removed or leaves |
+| `organizationCleanup` | boolean | `true` | Delete notifications when an org is deleted or a member is removed or leaves. Off also leaves them out of `@byo-oss/core`'s `deleteOrganizationData`/`deleteMemberData` fan-out |
+| `onEvent` | `ByoEventHandler` | | Receives `notifications.*` [events](#events) after the write commits. Errors are logged, never thrown |
 | `schema` | | | Rename tables and fields |
 
 A `DeliveryRule`:
@@ -284,6 +341,8 @@ Server-only functions (not endpoints), for your own scripts and hooks:
 | `deleteOrganizationData(auth, organizationId)` | Deletes an org's notifications and their deliveries → `{ notifications }` (the count) |
 | `deleteMemberData(auth, { userId, organizationId })` | Deletes one member's notifications in one org → `{ notifications }` |
 | `exportNotificationsData(auth, { organizationId?, cursor?, limit? })` | One page (500 by default) of notifications, each with its `deliveries` and the user's `userEmail`, as plain JSON with ISO dates → `{ notifications, cursor }`. Pass `cursor` back until it's `null`. Pages follow `createdAt`, so a row deleted mid-export (a member leaving, say) doesn't make the next page skip one. An offset cursor from an earlier release throws; start over with no cursor |
+
+The plugin also declares `byo` hooks, so [`@byo-oss/core`](https://github.com/byo-oss/core) reaches it: `sweepAll(auth)` runs the same sweep as `processDeliveries` (one cron route for every BYO plugin can replace the `processDeliveries` call), and core's `deleteOrganizationData` and `deleteMemberData` call the functions above. With `organizationCleanup: false` only the sweep is declared.
 
 ### React (`@byo-oss/notifications/react`)
 
@@ -380,6 +439,19 @@ index("notification_delivery_notification_idx").on(table.notificationId)
 // only if you export without an organizationId:
 index("notification_created_idx").on(table.createdAt)
 ```
+
+## Upgrading to 0.10
+
+No migration. Breaking:
+
+- **better-auth 1.7.7+.** The `better-auth` peer is now `^1.7.7`, and `@better-auth/core` is a new required peer: install it at the same version as `better-auth`. Events use its after-commit hooks.
+- **Reserved types.** `notify` rejects types that start with `notifications.` (`RESERVED_NOTIFICATION_TYPE`), and a `routes` key with that prefix throws when the plugin is created. They're the plugin's own [events](#events).
+
+New:
+
+- `onEvent`, with `notifications.notification.created` and `notifications.delivery.failed`, delivered after commit.
+- `byo` hooks for `@byo-oss/core` (`sweepAll`, `deleteOrganizationData`, `deleteMemberData`). The cleanups are left out under `organizationCleanup: false`.
+- A stale send with no attempts left is now failed one row at a time, at most `limit` rows per sweep (`hasMore` is `true` when more remain). Rows past that cap stay `sending` for the next sweep instead of being retried past `maxAttempts`.
 
 ## Upgrading to 0.8
 
