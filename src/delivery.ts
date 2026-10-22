@@ -240,8 +240,8 @@ export type SweepResult = {
   failed: number;
   /**
    * Call again: more deliveries were due than the batch size, or the sweep
-   * stopped at `limit` stale sends with no attempts left after failing some
-   * of them. So it can be true with nothing due to send.
+   * stopped at `limit` stale sends with no attempts left after failing at
+   * least one on the capped page. So it can be true with nothing due to send.
    */
   hasMore: boolean;
 };
