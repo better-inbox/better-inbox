@@ -5,8 +5,6 @@ group: reference
 order: 4
 ---
 
-<Next>
-
 Pass `onEvent` and the plugin reports what happened as `ByoEvent`s from [`@byo-oss/core`](https://github.com/byo-oss/core). Other packages (an activity feed, metrics, a bridge to another tool) can react without calling into this one.
 
 ## Event types
@@ -83,4 +81,3 @@ Events fire at once, and a throw keeps both the rows and the events. A third-par
 
 A forwarder that turns every event into a notification would loop. `notify` rejects types that start with `notifications.` (`RESERVED_NOTIFICATION_TYPE`), and a `routes` key with that prefix throws when the plugin is created. A forwarder that renames the type isn't caught, so filter `notifications.*` out yourself.
 
-</Next>

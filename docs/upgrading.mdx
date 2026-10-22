@@ -51,21 +51,21 @@ No schema change and no new options. Behaviour changes:
 - **Inside a better-auth transaction.** `notify`, `deleteOrganizationData`, `deleteMemberData` and `exportNotificationsData` now run in the caller's transaction (`runWithTransaction`), so their writes commit and roll back with it. Before, they wrote outside it, and on a one-connection database (PGlite) they waited on it forever. `notify` never sends inside a transaction: emails due right away wait for the next `processDeliveries` run. If you deferred `notify` until after the transaction yourself, you can call it directly now.
 - **`wrapsEmail`.** A missing or malformed recipient now fails at once with `PermanentDeliveryError` instead of retrying until `maxAttempts`. Bounces and suppressions still arrive later as SES events, not as send errors.
 
-<Next>
 ## 0.10
 
-No migration. Breaking:
+Migration:
 
-- **better-auth 1.7.7+.** The `better-auth` peer is now `^1.7.7`, and `@better-auth/core` is a new required peer. Install it at the same version as `better-auth`. Events use its after-commit hooks.
-- **Reserved types.** `notify` rejects types that start with `notifications.` (`RESERVED_NOTIFICATION_TYPE`), and a `routes` key with that prefix throws when the plugin is created. They're the plugin's own [events](/docs/notifications/events).
-- **`batchSize` is checked.** `inbox()` throws unless `batchSize` is an integer from 1 to 1000, the range `processDeliveries` already accepts for `limit`.
+- **Install `@better-auth/core`.** The `better-auth` peer is now `^1.7.7` (it was `^1.6.23`), and `@better-auth/core` `^1.7.7` is a new required peer, used for the after-commit hooks behind events. Install it at the same version as `better-auth`, and add it to any package that imports the auth client or server. `@byo-oss/core` is a dependency and installs itself.
+- **Don't forward `notifications.*` into `notify`.** If an `onEvent` handler turns events into notifications, skip the plugin's own types first. `notify` rejects them (`RESERVED_NOTIFICATION_TYPE`), and a `routes` key with that prefix throws when the plugin is created. Events are in [Events](/docs/notifications/events).
+- **Check `batchSize`.** `inbox()` throws unless `batchSize` is an integer from 1 to 1000, the range `processDeliveries` already accepts for `limit`.
+
+Breaking:
+
+- **Reserved types.** `notify` rejects types that start with `notifications.`, the prefix for the plugin's own events.
+- **Stale sends with no attempts left.** A sweep now fails them one row at a time, at most `limit` rows per sweep, instead of all at once. When it stops at that cap after failing rows there, `processDeliveries` returns `hasMore: true`, so `hasMore` can be true with nothing due to send. Loop while `hasMore` is true. Exhausted rows past the cap stay `sending` until a later sweep fails them; they're never retried past `maxAttempts`. Rows the sweep can't update (row-level security, say) still count against `limit`, so once `limit` of them (up to 180) come first in scan order, later exhausted rows wait.
 
 New:
 
-- `onEvent`, with `notifications.notification.created` and `notifications.delivery.failed`, delivered after commit. See [Events](/docs/notifications/events). Of the calls that emit events, only `notify` joins a caller's transaction. Call `processDeliveries` (or `sweepAll`) outside one: its writes commit as they happen, as in 0.9, and its `delivery.failed` events fire at once.
-- `byo` hooks for `@byo-oss/core` (`sweepAll`, `deleteOrganizationData`, `deleteMemberData`). The cleanups are left out under `organizationCleanup: false`.
-
-Behaviour changes:
-
-- **Stale sends with no attempts left.** A sweep now fails them one row at a time, at most `limit` rows per sweep, instead of all at once. When it stops at that cap after failing rows there, `processDeliveries` returns `hasMore: true`, so `hasMore` can be true with nothing due to send. Exhausted rows past the cap stay `sending` until a later sweep fails them; they're never retried past `maxAttempts`. Rows the sweep can't update (row-level security, say) still count against `limit`, so once `limit` of them (up to 180) come first in scan order, later exhausted rows wait.
-</Next>
+- **`onEvent`**, with `notifications.notification.created` and `notifications.delivery.failed`, delivered after commit. See [Events](/docs/notifications/events). Of the calls that emit events, only `notify` joins a caller's transaction. Call `processDeliveries` (or `sweepAll`) outside one: its writes commit as they happen, and its `delivery.failed` events fire at once.
+- **`byo` hooks** for `@byo-oss/core` (`sweepAll`, `deleteOrganizationData`, `deleteMemberData`). The cleanups are left out under `organizationCleanup: false`.
+- **`NOTIFICATIONS_EVENT_TYPES`** and the event types (`NotificationsEvent`, `NotificationCreatedEvent`, `DeliveryFailedEvent`), exported for routing on an event bus.
