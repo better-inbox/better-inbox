@@ -696,6 +696,18 @@ describe("loop guard", () => {
   });
 });
 
+describe("boot checks", () => {
+  it.each([2.5, 0, -1, 1001])("rejects batchSize %s", (batchSize) => {
+    expect(() => inbox({ batchSize })).toThrow(
+      `[@byo-oss/notifications] batchSize must be an integer from 1 to 1000, got ${batchSize}`,
+    );
+  });
+
+  it.each([1, 100, 1000])("accepts batchSize %s", (batchSize) => {
+    expect(() => inbox({ batchSize })).not.toThrow();
+  });
+});
+
 describe("event types", () => {
   it("a flow emits exactly NOTIFICATIONS_EVENT_TYPES", async () => {
     const { onEvent, events } = recorder();

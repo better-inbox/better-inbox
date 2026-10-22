@@ -32,7 +32,7 @@ Work through these in order. Each step ends on a check; move on only when it hol
 
 7. **Email, only if asked for.** Install `@wraps.dev/email`, then add `appUrl`, `channels: { email: wrapsEmail({ from }) }` and `routes` keyed by `type` (see `llms.txt`). Then add a scheduled call to `auth.api.processDeliveries({})`, every minute, in whatever runs the app's cron. Without it, delayed emails and retries never go out. If the app already uses `@byo-oss/core`, its `sweepAll(auth)` route runs this sweep too and can replace the `processDeliveries` call. Done when a routed notification produces a `sent` delivery in dev.
 
-8. **Events, only if asked for.** Pass `onEvent` to `inbox()`, built with `createEventBus` from `@byo-oss/core` (see `llms.txt` for the event table). Handlers run after the write commits: `notify` inside `runWithTransaction` waits for its commit, while the sweep never joins a transaction (call it outside one; its failure events fire at once). Never route `notifications.*` events back into `notify`. Done when a `notify` in dev reaches the handler with `notifications.notification.created`.
+8. **Events, only if asked for.** Pass `onEvent` to `inbox()`, built with `createEventBus` from `@byo-oss/core` (see `llms.txt` for the event table). Handlers run after the write commits. Of the calls that emit events, only `notify` joins a caller's `runWithTransaction` (its events wait for the commit); the sweep never joins a transaction, so call it outside one (its failure events fire at once). Never route `notifications.*` events back into `notify`. Done when a `notify` in dev reaches the handler with `notifications.notification.created`.
 
 ## Rules
 

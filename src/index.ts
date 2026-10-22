@@ -61,7 +61,8 @@ export type InboxOptions<Channel extends string = string> = {
    */
   maxAttempts?: number;
   /**
-   * Deliveries attempted per `processDeliveries` call.
+   * Deliveries attempted per `processDeliveries` call, an integer from 1 to
+   * 1000.
    * @default 100
    */
   batchSize?: number;
@@ -88,6 +89,19 @@ export const inbox = <Channel extends string = string>(
 ) => {
   const channels: Record<string, InboxChannel> = options.channels ?? {};
   const routes = options.routes ?? {};
+  // the sweep's default limit; processDeliveries takes 1 to 1000 too
+  if (
+    options.batchSize !== undefined &&
+    !(
+      Number.isInteger(options.batchSize) &&
+      options.batchSize >= 1 &&
+      options.batchSize <= 1000
+    )
+  ) {
+    throw new Error(
+      `[@byo-oss/notifications] batchSize must be an integer from 1 to 1000, got ${options.batchSize}`,
+    );
+  }
   for (const [type, rules] of Object.entries(routes)) {
     if (type.startsWith("notifications.")) {
       throw new Error(

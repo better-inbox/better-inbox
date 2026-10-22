@@ -240,8 +240,8 @@ export type SweepResult = {
   failed: number;
   /**
    * Call again: more deliveries were due than the batch size, or the sweep
-   * stopped at `limit` stale sends with no attempts left. Can be true with
-   * nothing due to send.
+   * stopped at `limit` stale sends with no attempts left after failing some
+   * of them. So it can be true with nothing due to send.
    */
   hasMore: boolean;
 };
@@ -294,10 +294,12 @@ export async function processDueDeliveries(
  * time, and emits `notifications.delivery.failed` (`"unfinished"`) for each.
  * The per-row guarded update is the compare-and-swap: of two overlapping
  * sweeps, exactly one moves (and reports) a row. Examines at most `limit` rows;
- * returns true when it stopped at that cap with rows left and moved at least
- * one, so the sweep reports `hasMore`. Rows it can't move (row-level security,
- * or another sweep took them) are left out of later pages, so they can't hide
- * movable rows behind them.
+ * returns true only when it stopped at that cap with rows left after moving at
+ * least one on the capped page, so the sweep reports `hasMore`. Rows it can't
+ * move (row-level security, or another sweep took them) are left out of later
+ * pages in the same sweep, but they still count against `limit`: once `limit`
+ * of them (up to 180, IN_CHUNK twice over) come first in scan order, later
+ * exhausted rows wait.
  */
 async function failExhaustedLeases(
   context: AuthContext,
@@ -325,6 +327,8 @@ async function failExhaustedLeases(
     });
     if (page.length === 0) return false;
     const rows = page.slice(0, take);
+    // defense in depth: a take of zero (a non-integer limit) must not spin
+    if (rows.length === 0) return false;
     examined += rows.length;
     const capped = page.length > take && examined >= limit;
 

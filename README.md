@@ -234,7 +234,7 @@ export async function GET() {
 }
 ```
 
-Emails that are due right away (an away user, a rule with no delay) are sent inside `notify` when better-auth has a background task handler (`advanced: { backgroundTasks: { handler: waitUntil } }`) and the batch is 25 or fewer. Otherwise, including large org fan-outs, and any `notify` inside a better-auth transaction, they go out on the next sweep. Each sweep handles `batchSize` deliveries (100) and returns `hasMore` when more are due, or when it stopped at `limit` stale sends with no attempts left (then `hasMore` can be true with nothing due to send).
+Emails that are due right away (an away user, a rule with no delay) are sent inside `notify` when better-auth has a background task handler (`advanced: { backgroundTasks: { handler: waitUntil } }`) and the batch is 25 or fewer. Otherwise, including large org fan-outs, and any `notify` inside a better-auth transaction, they go out on the next sweep. Each sweep handles `batchSize` deliveries (100) and returns `hasMore` when more are due. It can also be true with nothing due: the sweep stopped at `limit` stale sends with no attempts left after failing rows there.
 
 **Delivery is at-least-once.** Each delivery is claimed atomically before it's sent, so overlapping sweeps don't double-send. A failed send retries with backoff (1 minute, doubling, up to an hour) and is marked `failed` after `maxAttempts` (5). A worker that dies mid-send has its delivery retried five minutes later, so a crash after SES accepted the email can send it twice.
 
@@ -268,7 +268,7 @@ inbox({
 });
 ```
 
-**After commit.** An event fires once the write it describes has committed. Outside a transaction, `notify` calls the handler before it returns, and so does `processDeliveries` for the failures it records. Only `notify` joins a caller's transaction: inside `runWithTransaction`, its events wait until it commits and are dropped if it rolls back; they're handled before `runWithTransaction` returns. The sweep (`processDeliveries`, or `sweepAll` from `@byo-oss/core`) never joins one: its writes commit as they happen, and its `delivery.failed` events fire at once, even if your transaction then rolls back. Call it outside a transaction. Join with `runWithTransaction` from `@better-auth/core/context`. A plain `adapter.transaction(trx => …)` isn't joined at all: the plugin's writes commit at once, along with their events. Wrapping it with `runWithAdapter(trx, …)` makes the writes join, but their events fire before the commit.
+**After commit.** An event fires once the write it describes has committed. Outside a transaction, `notify` calls the handler before it returns, and so does `processDeliveries` for the failures it records. Of the calls that emit events, only `notify` joins a caller's transaction: inside `runWithTransaction`, its events wait until it commits and are dropped if it rolls back; they're handled before `runWithTransaction` returns. The sweep (`processDeliveries`, or `sweepAll` from `@byo-oss/core`) never joins one: its writes commit as they happen, and its `delivery.failed` events fire at once, even if your transaction then rolls back. Call it outside a transaction. Join with `runWithTransaction` from `@better-auth/core/context`. A plain `adapter.transaction(trx => …)` isn't joined at all: the plugin's writes commit at once, along with their events. Wrapping it with `runWithAdapter(trx, …)` makes the writes join, but their events fire before the commit.
 
 **Errors never reach you.** A handler that throws or rejects is logged (`onEvent failed for <type>`) and never fails `notify` or the sweep.
 
@@ -302,7 +302,7 @@ await runWithTransaction(adapter, work, {
 | `shouldDeliver` | `({ notification, user, channel }) => boolean \| Promise<boolean>` | | Return `false` to skip a delivery, e.g. from your own preferences |
 | `presenceWindow` | number (ms) | `120000` | How recently a user must have polled to count as in the app |
 | `maxAttempts` | number | `5` | Sends tried before a delivery is marked `failed` |
-| `batchSize` | number | `100` | Deliveries per `processDeliveries` call |
+| `batchSize` | number | `100` | Deliveries per `processDeliveries` call, an integer from 1 to 1000 |
 | `maxFanout` | number | `1000` | Most members one organization `notify` may reach |
 | `organizationCleanup` | boolean | `true` | Delete notifications when an org is deleted or a member is removed or leaves. Off also leaves them out of `@byo-oss/core`'s `deleteOrganizationData`/`deleteMemberData` fan-out |
 | `onEvent` | `ByoEventHandler` | | Receives `notifications.*` [events](#events) after the write commits. Errors are logged, never thrown |
@@ -446,6 +446,7 @@ No migration. Breaking:
 
 - **better-auth 1.7.7+.** The `better-auth` peer is now `^1.7.7`, and `@better-auth/core` is a new required peer: install it at the same version as `better-auth`. Events use its after-commit hooks.
 - **Reserved types.** `notify` rejects types that start with `notifications.` (`RESERVED_NOTIFICATION_TYPE`), and a `routes` key with that prefix throws when the plugin is created. They're the plugin's own [events](#events).
+- **`batchSize` is checked.** `inbox()` throws unless `batchSize` is an integer from 1 to 1000, the range `processDeliveries` already accepts for `limit`.
 
 New:
 
@@ -454,7 +455,7 @@ New:
 
 Behaviour changes:
 
-- **Stale sends with no attempts left.** A sweep now fails them one row at a time, at most `limit` rows per sweep, instead of all at once. When it stops at that cap, `processDeliveries` returns `hasMore: true`, even with nothing due to send. Exhausted rows past the cap stay `sending` until a later sweep fails them; they're never retried past `maxAttempts`.
+- **Stale sends with no attempts left.** A sweep now fails them one row at a time, at most `limit` rows per sweep, instead of all at once. When it stops at that cap after failing rows there, `processDeliveries` returns `hasMore: true`, so `hasMore` can be true with nothing due to send. Exhausted rows past the cap stay `sending` until a later sweep fails them; they're never retried past `maxAttempts`. Rows the sweep can't update (row-level security, say) still count against `limit`, so once `limit` of them (up to 180) come first in scan order, later exhausted rows wait.
 
 ## Upgrading to 0.8
 

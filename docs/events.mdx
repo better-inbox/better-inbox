@@ -48,7 +48,7 @@ inbox({
 An event fires once the write it describes has committed.
 
 - Outside a transaction, `notify` calls the handler before it returns, and so does `processDeliveries` for the failures it records.
-- Only `notify` joins a caller's transaction. Inside `runWithTransaction`, its events wait until it commits and are dropped if it rolls back. They're handled before `runWithTransaction` returns.
+- Of the calls that emit events, only `notify` joins a caller's transaction. Inside `runWithTransaction`, its events wait until it commits and are dropped if it rolls back. They're handled before `runWithTransaction` returns.
 - The sweep (`processDeliveries`, or `sweepAll` from `@byo-oss/core`) never joins a transaction. Its writes commit as they happen, and its `delivery.failed` events fire at once, even if your transaction then rolls back. Call it outside a transaction.
 
 Join with `runWithTransaction` from `@better-auth/core/context`. A plain `adapter.transaction(trx => …)` isn't joined at all: the plugin's writes commit at once, along with their events. Wrapping it with `runWithAdapter(trx, …)` makes the writes join, but their events fire before the commit.

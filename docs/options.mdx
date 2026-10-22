@@ -30,6 +30,7 @@ Pass these to `inbox(options)` in your better-auth config. Every option is optio
 |--------|------|---------|---------|
 | `onEvent` | `ByoEventHandler` | | Receives `notifications.*` events after the write commits. Errors are logged, never thrown. See [Events](/docs/notifications/events) |
 | `organizationCleanup` | boolean | `true` | Off also leaves notifications out of `@byo-oss/core`'s `deleteOrganizationData`/`deleteMemberData` fan-out |
+| `batchSize` | number | `100` | An integer from 1 to 1000; `inbox()` throws otherwise |
 
 Don't turn `organizationCleanup` off to avoid the plugin's cleanup and core's fan-out both running: the second run finds nothing and does nothing. Off means nothing deletes the rows.
 

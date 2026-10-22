@@ -86,7 +86,7 @@ Each sweep handles `batchSize` deliveries (100 by default) and returns `hasMore`
 
 <Next>
 
-`hasMore` is also `true` when the sweep stopped at `limit` stale sends with no attempts left, even with nothing due to send. Those rows stay `sending` until a later sweep fails them.
+`hasMore` can also be `true` with nothing due to send: the sweep stopped at `limit` stale sends with no attempts left after failing rows there. The rest stay `sending` until a later sweep fails them.
 
 </Next>
 
