@@ -1,6 +1,7 @@
 import { SandboxError, SESError, ValidationError, WrapsEmail } from "@wraps.dev/email";
 import { describe, expect, it, vi } from "vitest";
-import { PermanentDeliveryError, type DeliveryContext } from "./delivery";
+import type { DeliveryContext } from "./delivery";
+import { PermanentDeliveryError } from "./permanent";
 import { createTestAuth, signUpUser } from "./test-utils";
 import { testChannel } from "./testing";
 import { notificationUrl, renderEmail, wrapsEmail } from "./wraps";

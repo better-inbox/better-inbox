@@ -84,6 +84,12 @@ Emails that are due right away (an away user, a rule with no delay) are sent ins
 
 Each sweep handles `batchSize` deliveries (100 by default) and returns `hasMore` when more are due.
 
+<Next>
+
+`hasMore` is also `true` when the sweep stopped at `limit` stale sends with no attempts left, even with nothing due to send. Those rows stay `sending` until a later sweep fails them.
+
+</Next>
+
 ## Delivery guarantee
 
 Delivery is at-least-once. Each delivery is claimed atomically before it's sent, so overlapping sweeps don't double-send.

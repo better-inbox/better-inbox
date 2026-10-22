@@ -2,6 +2,7 @@ import type { ByoEventHandler } from "@byo-oss/core";
 import type { AuthContext, DBTransactionAdapter, User, Where } from "better-auth";
 import { findManyIn, IN_CHUNK } from "./adapter";
 import { deliveryFailed, emit } from "./events";
+import { isPermanent } from "./permanent";
 import type {
   InboxPresence,
   Notification,
@@ -37,26 +38,6 @@ export type InboxChannel = {
    */
   deliver: (ctx: DeliveryContext) => Promise<void>;
 };
-
-/**
- * Throw from a channel's `deliver` for a send that will never succeed (an
- * invalid address, a hard bounce, a revoked token): the delivery is marked
- * `failed` without retrying.
- */
-export class PermanentDeliveryError extends Error {
-  readonly permanent = true;
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = "PermanentDeliveryError";
-  }
-}
-
-// duck-typed too, so a channel needn't import this package's class
-const isPermanent = (error: unknown) =>
-  error instanceof PermanentDeliveryError ||
-  (typeof error === "object" &&
-    error !== null &&
-    (error as { permanent?: unknown }).permanent === true);
 
 export type DeliveryRule<Channel extends string = string> = {
   channel: Channel;
@@ -257,7 +238,11 @@ export type SweepResult = {
   skipped: number;
   retrying: number;
   failed: number;
-  /** More deliveries were due than the batch size; call again. */
+  /**
+   * Call again: more deliveries were due than the batch size, or the sweep
+   * stopped at `limit` stale sends with no attempts left. Can be true with
+   * nothing due to send.
+   */
   hasMore: boolean;
 };
 
@@ -309,8 +294,10 @@ export async function processDueDeliveries(
  * time, and emits `notifications.delivery.failed` (`"unfinished"`) for each.
  * The per-row guarded update is the compare-and-swap: of two overlapping
  * sweeps, exactly one moves (and reports) a row. Examines at most `limit` rows;
- * returns true when it stopped at that cap with rows left, so the sweep
- * reports `hasMore`.
+ * returns true when it stopped at that cap with rows left and moved at least
+ * one, so the sweep reports `hasMore`. Rows it can't move (row-level security,
+ * or another sweep took them) are left out of later pages, so they can't hide
+ * movable rows behind them.
  */
 async function failExhaustedLeases(
   context: AuthContext,
@@ -322,12 +309,18 @@ async function failExhaustedLeases(
     ...stale,
     { field: "attempts", operator: "gte", value: options.maxAttempts },
   ];
+  // ids whose guarded update moved nothing; capped at IN_CHUNK so the
+  // not_in list stays within D1's 100 parameters
+  const stuck: string[] = [];
   let examined = 0;
   while (examined < limit) {
     const take = Math.min(IN_CHUNK, limit - examined);
     const page = await context.adapter.findMany<NotificationDelivery>({
       model: "notificationDelivery",
-      where: exhausted,
+      where:
+        stuck.length > 0
+          ? [...exhausted, { field: "id", operator: "not_in", value: stuck }]
+          : exhausted,
       limit: take + 1,
     });
     if (page.length === 0) return false;
@@ -348,13 +341,18 @@ async function failExhaustedLeases(
       : undefined;
 
     let moved = 0;
+    let unrecorded = false;
     for (const row of rows) {
       const updated = await context.adapter.updateMany({
         model: "notificationDelivery",
         where: [{ field: "id", value: row.id }, ...exhausted],
         update: { status: "failed", detail: "send did not finish" },
       });
-      if (updated !== 1) continue;
+      if (updated !== 1) {
+        if (stuck.length < IN_CHUNK) stuck.push(row.id);
+        else unrecorded = true;
+        continue;
+      }
       moved++;
       await emit(
         options.onEvent,
@@ -367,12 +365,12 @@ async function failExhaustedLeases(
         }),
       );
     }
-    // a page that moved nothing (row-level security, or another sweep took
-    // the rows) would come back unchanged: stop rather than spin, and don't
-    // report hasMore for rows this sweep can't move
-    if (moved === 0) return false;
-    if (capped) return true;
+    // don't report hasMore for a capped page this sweep couldn't move
+    if (capped) return moved > 0;
     if (page.length <= take) return false;
+    // nothing moved, and some of it couldn't be excluded: the next page would
+    // come back the same, so stop rather than spin
+    if (moved === 0 && unrecorded) return false;
   }
   return false;
 }

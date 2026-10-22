@@ -232,6 +232,37 @@ describe("after commit", () => {
     });
   });
 
+  it("reports a sweep's failure at once inside a transaction that rolls back", async () => {
+    // the sweep writes through the base adapter, not the caller's transaction:
+    // its failure has committed, so the event must not wait for (or die with)
+    // the caller's transaction
+    const { onEvent, events, order } = recorder();
+    const { channel } = fakeChannel(new PermanentDeliveryError("hard bounce"));
+    const auth = createTestAuth(emailOptions(channel, { onEvent }));
+    const alice = await signUpUser(auth, "alice@example.com");
+    await auth.api.notify({ body: { userId: alice.user.id, ...shipped } });
+    order.length = 0;
+    events.length = 0;
+
+    await expect(
+      inTransaction(auth, async () => {
+        await auth.api.processDeliveries({});
+        order.push("fn-end");
+        throw new Error("job failed");
+      }),
+    ).rejects.toThrow("job failed");
+
+    expect(order).toEqual(["handler", "fn-end"]);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "notifications.delivery.failed",
+      data: { reason: "permanent" },
+    });
+    expect(await rows(auth, "notificationDelivery")).toMatchObject([
+      { status: "failed" },
+    ]);
+  });
+
   it("reports a failure that ran out of attempts", async () => {
     const { onEvent, events } = recorder();
     const { channel } = fakeChannel(new Error("smtp down"));
@@ -537,6 +568,48 @@ describe("stale leases", () => {
         (d) => d.status,
       ),
     ).toEqual(["sending", "sending", "sending"]);
+  });
+
+  it("fails movable exhausted leases behind a full page it can't move", async () => {
+    const { auth, events } = await seed(1);
+    const { adapter } = await auth.$context;
+    const [first] = await rows<NotificationDelivery>(auth, "notificationDelivery");
+    // 92 deliveries: a first page (90, IN_CHUNK) that can't be moved, then 2
+    const { id: _, ...copy } = first!;
+    for (let i = 0; i < 91; i++) {
+      await adapter.create({ model: "notificationDelivery", data: { ...copy } });
+    }
+    await makeStale(auth, 2);
+    const order = await adapter.findMany<NotificationDelivery>({
+      model: "notificationDelivery",
+      where: [{ field: "status", value: "sending" }],
+      limit: 1000,
+    });
+    expect(order).toHaveLength(92);
+    const blocked = new Set(order.slice(0, 90).map((d) => d.id));
+    const movable = order.slice(90).map((d) => d.id);
+    // row-level security, say: the guarded update can't touch these rows
+    const updateMany = adapter.updateMany;
+    adapter.updateMany = (async (args: any) => {
+      const id = args.where?.find((w: { field: string }) => w.field === "id");
+      if (id && blocked.has(id.value)) return 0;
+      return updateMany(args);
+    }) as typeof updateMany;
+    try {
+      await auth.api.processDeliveries({});
+    } finally {
+      adapter.updateMany = updateMany;
+    }
+    expect(unfinished(events).map((e) => e.subject.id).sort()).toEqual(
+      [...movable].sort(),
+    );
+    const after = await rows<NotificationDelivery>(auth, "notificationDelivery");
+    expect(
+      after.filter((d) => movable.includes(d.id)).map((d) => d.status),
+    ).toEqual(["failed", "failed"]);
+    expect(
+      after.filter((d) => blocked.has(d.id)).every((d) => d.status === "sending"),
+    ).toBe(true);
   });
 
   it("emits once when two sweeps race for one exhausted lease", async () => {

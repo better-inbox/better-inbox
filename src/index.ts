@@ -194,10 +194,10 @@ export {
   type DeliveryRule,
   type Duration,
   type InboxChannel,
-  PermanentDeliveryError,
   type ShouldDeliver,
   type SweepResult,
 } from "./delivery";
+export { PermanentDeliveryError } from "./permanent";
 export {
   type AuthWithContext,
   deleteMemberData,

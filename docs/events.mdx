@@ -48,9 +48,10 @@ inbox({
 An event fires once the write it describes has committed.
 
 - Outside a transaction, `notify` calls the handler before it returns, and so does `processDeliveries` for the failures it records.
-- Inside a better-auth transaction, `notify`'s events wait until it commits and are dropped if it rolls back. They're handled before `runWithTransaction` returns.
+- Only `notify` joins a caller's transaction. Inside `runWithTransaction`, its events wait until it commits and are dropped if it rolls back. They're handled before `runWithTransaction` returns.
+- The sweep (`processDeliveries`, or `sweepAll` from `@byo-oss/core`) never joins a transaction. Its writes commit as they happen, and its `delivery.failed` events fire at once, even if your transaction then rolls back. Call it outside a transaction.
 
-Join with `runWithTransaction` from `@better-auth/core/context`. A transaction you open yourself with `adapter.transaction(trx => …)` isn't seen as one, so events would fire before it commits.
+Join with `runWithTransaction` from `@better-auth/core/context`. A plain `adapter.transaction(trx => …)` isn't joined at all: the plugin's writes commit at once, along with their events. Wrapping it with `runWithAdapter(trx, …)` makes the writes join, but their events fire before the commit.
 
 In your own `runWithTransaction`, pass `{ onAfterCommitHookError }`. Without it, an earlier after-commit hook that throws (a better-auth `databaseHooks` `after` hook, say) makes `runWithTransaction` throw and skip the hooks queued after it, including these events:
 
@@ -68,7 +69,7 @@ A handler that throws or rejects is logged (`onEvent failed for <type>`). It nev
 
 - **One event per row.** An org fan-out to N members emits N events, each awaited in turn, inside `notify` or after the commit. `maxFanout` bounds it. Outside a transaction, a fan-out that fails part way keeps the rows it wrote, without events for them.
 - **No ordering.** With a background task handler, an immediate send can report `delivery.failed` before `notify` has finished emitting `created`.
-- **Failures can repeat.** `delivery.failed` can arrive twice for one delivery: a send that outlives its five-minute lease is retried or failed as `unfinished` while the original send still finishes. It's the same cause as in [Email if unread](/docs/notifications/email): a crash after SES accepted the email can send it twice.
+- **Failures can repeat.** `delivery.failed` can arrive twice for one delivery: a send that outlives its five-minute lease is retried or failed as `unfinished` while the original send still finishes. That original send can also succeed after the `unfinished` event, leaving the row `sent`, so check the row before acting on a failure. It's the same cause as in [Email if unread](/docs/notifications/email): a crash after SES accepted the email can send it twice.
 
 ## No content
 

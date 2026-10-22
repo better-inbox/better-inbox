@@ -5,7 +5,7 @@ Formerly [`better-inbox`](https://www.npmjs.com/package/better-inbox). Same API:
 In-app notifications for [better-auth](https://better-auth.com) apps. One plugin, one migration, one component — notifications live in **your** database, addressed to **your** users.
 
 ```
-npm install @byo-oss/notifications
+npm install @byo-oss/notifications @better-auth/core
 ```
 
 ![Stripe webhook fires, the bell rings, and the inbox panel opens with the payment-failed notification](https://raw.githubusercontent.com/byo-oss/notifications/main/.github/demo.gif)
@@ -234,7 +234,7 @@ export async function GET() {
 }
 ```
 
-Emails that are due right away (an away user, a rule with no delay) are sent inside `notify` when better-auth has a background task handler (`advanced: { backgroundTasks: { handler: waitUntil } }`) and the batch is 25 or fewer. Otherwise, including large org fan-outs, and any `notify` inside a better-auth transaction, they go out on the next sweep. Each sweep handles `batchSize` deliveries (100) and returns `hasMore` when more are due.
+Emails that are due right away (an away user, a rule with no delay) are sent inside `notify` when better-auth has a background task handler (`advanced: { backgroundTasks: { handler: waitUntil } }`) and the batch is 25 or fewer. Otherwise, including large org fan-outs, and any `notify` inside a better-auth transaction, they go out on the next sweep. Each sweep handles `batchSize` deliveries (100) and returns `hasMore` when more are due, or when it stopped at `limit` stale sends with no attempts left (then `hasMore` can be true with nothing due to send).
 
 **Delivery is at-least-once.** Each delivery is claimed atomically before it's sent, so overlapping sweeps don't double-send. A failed send retries with backoff (1 minute, doubling, up to an hour) and is marked `failed` after `maxAttempts` (5). A worker that dies mid-send has its delivery retried five minutes later, so a crash after SES accepted the email can send it twice.
 
@@ -268,13 +268,13 @@ inbox({
 });
 ```
 
-**After commit.** An event fires once the write it describes has committed. Outside a transaction, `notify` calls the handler before it returns, and so does `processDeliveries` for the failures it records. Inside a better-auth transaction, `notify`'s events wait until it commits and are dropped if it rolls back; they're handled before `runWithTransaction` returns. Join with `runWithTransaction` from `@better-auth/core/context`. A transaction you open yourself with `adapter.transaction(trx => …)` isn't seen as one, so events would fire before it commits.
+**After commit.** An event fires once the write it describes has committed. Outside a transaction, `notify` calls the handler before it returns, and so does `processDeliveries` for the failures it records. Only `notify` joins a caller's transaction: inside `runWithTransaction`, its events wait until it commits and are dropped if it rolls back; they're handled before `runWithTransaction` returns. The sweep (`processDeliveries`, or `sweepAll` from `@byo-oss/core`) never joins one: its writes commit as they happen, and its `delivery.failed` events fire at once, even if your transaction then rolls back. Call it outside a transaction. Join with `runWithTransaction` from `@better-auth/core/context`. A plain `adapter.transaction(trx => …)` isn't joined at all: the plugin's writes commit at once, along with their events. Wrapping it with `runWithAdapter(trx, …)` makes the writes join, but their events fire before the commit.
 
 **Errors never reach you.** A handler that throws or rejects is logged (`onEvent failed for <type>`) and never fails `notify` or the sweep.
 
 **One event per row.** An org fan-out to N members emits N events, each awaited in turn, inside `notify` (or after the commit). `maxFanout` bounds it. Outside a transaction, a fan-out that fails part way keeps the rows it wrote, without events for them.
 
-**No ordering, and failures can repeat.** With a background task handler, an immediate send can report `delivery.failed` before `notify` has finished emitting `created`. `delivery.failed` can arrive twice for one delivery: a send that outlives its five-minute lease is retried or failed as `unfinished` while the original send still finishes. It's the same cause as in [Email if unread](#email-if-unread): a crash after SES accepted the email can send it twice.
+**No ordering, and failures can repeat.** With a background task handler, an immediate send can report `delivery.failed` before `notify` has finished emitting `created`. `delivery.failed` can arrive twice for one delivery: a send that outlives its five-minute lease is retried or failed as `unfinished` while the original send still finishes. That original send can also succeed after the `unfinished` event, leaving the row `sent`, so check the row before acting on a failure. It's the same cause as in [Email if unread](#email-if-unread): a crash after SES accepted the email can send it twice.
 
 **No content.** Events carry ids, the type, the channel, the attempt count and the reason. Never the `title`, `body`, `href` (it can carry tokens), your `data`, or a channel's error text (provider errors can contain addresses). Look the row up by id if you need more.
 
@@ -451,7 +451,10 @@ New:
 
 - `onEvent`, with `notifications.notification.created` and `notifications.delivery.failed`, delivered after commit.
 - `byo` hooks for `@byo-oss/core` (`sweepAll`, `deleteOrganizationData`, `deleteMemberData`). The cleanups are left out under `organizationCleanup: false`.
-- A stale send with no attempts left is now failed one row at a time, at most `limit` rows per sweep (`hasMore` is `true` when more remain). Rows past that cap stay `sending` for the next sweep instead of being retried past `maxAttempts`.
+
+Behaviour changes:
+
+- **Stale sends with no attempts left.** A sweep now fails them one row at a time, at most `limit` rows per sweep, instead of all at once. When it stops at that cap, `processDeliveries` returns `hasMore: true`, even with nothing due to send. Exhausted rows past the cap stay `sending` until a later sweep fails them; they're never retried past `maxAttempts`.
 
 ## Upgrading to 0.8
 

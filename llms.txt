@@ -52,9 +52,9 @@ inbox({ onEvent: createEventBus([(event) => { /* event.type, event.userId, event
 // notifications.notification.created  | recipient | the notification's, if set | { type: "notification", id }           | { notificationId, notificationType }
 // notifications.delivery.failed       | recipient | the notification's, if set | { type: "notificationDelivery", id }   | { deliveryId, notificationId, notificationType, channel, attempts, reason: "permanent"|"max_attempts"|"unfinished" }
 // actorId is always null. No title, body, href, data or channel error text. Exports: NOTIFICATIONS_EVENT_TYPES, NotificationsEvent, NotificationCreatedEvent, DeliveryFailedEvent, NotificationsEventType.
-// After commit: outside a transaction the handler runs before notify / processDeliveries returns; inside runWithTransaction (from @better-auth/core/context) notify's events wait for the commit and are dropped on rollback. A hand-rolled adapter.transaction(trx => ...) isn't seen as a transaction: events fire before commit. Pass { onAfterCommitHookError } to your runWithTransaction so an earlier after-commit hook's throw can't skip these.
+// After commit: outside a transaction the handler runs before notify / processDeliveries returns. Only notify joins a caller's transaction: inside runWithTransaction (from @better-auth/core/context) its events wait for the commit and are dropped on rollback. The sweep (processDeliveries, sweepAll) never joins one: its writes commit as they happen and its delivery.failed events fire at once, even if the caller rolls back; call it outside a transaction. A plain adapter.transaction(trx => ...) isn't joined at all (writes and events happen at once); wrapping it with runWithAdapter(trx, ...) joins the writes but fires their events before the commit. Pass { onAfterCommitHookError } to your runWithTransaction so an earlier after-commit hook's throw can't skip these.
 // A throwing/rejecting handler is logged ("onEvent failed for <type>") and never fails notify or the sweep.
-// One event per row: an org fan-out of N awaits N handler calls (bounded by maxFanout). No ordering across events. delivery.failed can repeat for one delivery (a send outliving its 5-minute lease is retried or failed as "unfinished" while the original finishes; the same cause by which a crash after SES accepted the email can send it twice).
+// One event per row: an org fan-out of N awaits N handler calls (bounded by maxFanout). No ordering across events. delivery.failed can repeat for one delivery (a send outliving its 5-minute lease is retried or failed as "unfinished" while the original finishes; the same cause by which a crash after SES accepted the email can send it twice). The original send can still succeed after an "unfinished" event (row ends sent): check the row before acting.
 // Adapters without transactions: events fire at once; a throw keeps rows and events. A third-party adapter whose transaction builds a new adapter object without real rollback drops events on a throw while its rows stay.
 // Never route notifications.* events back into notify (loop); notify rejects them, a forwarder that renames the type isn't caught.
 
@@ -63,7 +63,7 @@ inbox({ onEvent: createEventBus([(event) => { /* event.type, event.userId, event
 // the plugin declares byo: { sweep, deleteOrganizationData, deleteMemberData }; with organizationCleanup: false only sweep
 await sweepAll(auth) // from @byo-oss/core: runs the same sweep as processDeliveries; one cron route for every BYO plugin can replace the processDeliveries call
 await deleteOrganizationData(auth, organizationId) // from @byo-oss/core: fan-out reaches this plugin's cleanup; running it after the plugin's own cleanup is a no-op
-// a stale send with no attempts left is failed one row at a time, at most `limit` per sweep (hasMore: true when more remain)
+// a stale send with no attempts left is failed one row at a time, at most `limit` per sweep; at that cap hasMore is true even with nothing due, and exhausted rows past it stay "sending" until a later sweep
 
 ## Organization cleanup and export (server-only functions, not endpoints)
 
@@ -95,7 +95,7 @@ const seenRef = useSeenOnView(markSeen, { delayMs: 1000, threshold: 0.5 }); // <
 
 ## Notes
 
-- 0.10: better-auth peer ^1.7.7 and a new required peer @better-auth/core (same version); notify rejects notifications.* types; onEvent and byo hooks are new; no migration
+- 0.10: better-auth peer ^1.7.7 and a new required peer @better-auth/core (same version); notify rejects notifications.* types and inbox({ routes }) throws at creation for a notifications.* key; onEvent and byo hooks are new; stale sends with no attempts left are failed at most `limit` per sweep (hasMore can be true with nothing due; rows past the cap stay "sending" until a later sweep); no migration
 - notification fields: id, userId, organizationId?, type, title, body?, href?, data? (json), read (boolean), seenAt?, createdAt
 - 0.8: every reference has onDelete: "cascade" (regenerate drizzle/prisma migrations); org delete/remove/leave cleans up automatically; tab text is "Unread"/"All"
 - schema is documented in the README (Schema); uninstall: drop notificationDelivery, then inboxPresence and notification

@@ -39,6 +39,9 @@ function emailChannel() {
 function createAppAuth(options: InboxOptions = {}, wired = false) {
   const lines: string[] = [];
   const fanOuts = { organization: 0, member: 0 };
+  // base-adapter reads of `notification` (counted once a test installs the
+  // spy), and how many there were when each fan-out finished
+  const probe = { reads: 0, atFanOutEnd: { organization: -1, member: -1 } };
   const plugins = [
     inbox(options),
     organization(
@@ -48,6 +51,7 @@ function createAppAuth(options: InboxOptions = {}, wired = false) {
               afterDeleteOrganization: async ({ organization }) => {
                 fanOuts.organization++;
                 await deleteOrganizationData(auth, organization.id);
+                probe.atFanOutEnd.organization = probe.reads;
               },
               afterRemoveMember: async ({ member }) => {
                 fanOuts.member++;
@@ -55,6 +59,7 @@ function createAppAuth(options: InboxOptions = {}, wired = false) {
                   userId: member.userId,
                   organizationId: member.organizationId,
                 });
+                probe.atFanOutEnd.member = probe.reads;
               },
             },
           }
@@ -72,7 +77,7 @@ function createAppAuth(options: InboxOptions = {}, wired = false) {
     database: memoryAdapter(db),
     logger: { log: (_level, message) => void lines.push(message) },
   });
-  return { auth, lines, fanOuts };
+  return { auth, lines, fanOuts, probe };
 }
 
 type App = ReturnType<typeof createAppAuth>["auth"];
@@ -169,29 +174,43 @@ describe("byo hooks", () => {
   });
 
   it("the plugin's own cleanup and core's fan-out both running is safe", async () => {
-    const { auth, lines, fanOuts } = createAppAuth(
+    const { auth, lines, fanOuts, probe } = createAppAuth(
       withEmail(emailChannel().channel),
       true,
     );
     const { owner, member, org } = await seed(auth);
+    const { adapter } = await auth.$context;
+    const findMany = adapter.findMany;
+    adapter.findMany = ((args: { model: string }) => {
+      if (args.model === "notification") probe.reads++;
+      return findMany(args as Parameters<typeof findMany>[0]);
+    }) as typeof findMany;
 
     await auth.api.removeMember({
       headers: owner.headers,
       body: { memberIdOrEmail: member.user.email, organizationId: org.id },
     });
+    const readsAfterRemove = probe.reads;
     expect((await counts(auth, org.id)).of(member.user.id)).toBe(0);
 
     await auth.api.deleteOrganization({
       headers: owner.headers,
       body: { organizationId: org.id },
     });
+    const readsAtEnd = probe.reads;
     expect(await counts(auth, org.id)).toMatchObject({
       org: 0,
       orgDeliveries: 0,
       total: 1,
     });
-    // core's fan-out ran from the organizationHooks, then the plugin's own hook
+    // core's fan-out ran from the organizationHooks, then the plugin's own
+    // hook: it read notifications after each fan-out had finished
     expect(fanOuts).toEqual({ organization: 1, member: 1 });
+    expect(probe.atFanOutEnd.member).toBeGreaterThanOrEqual(0);
+    expect(readsAfterRemove).toBeGreaterThan(probe.atFanOutEnd.member);
+    expect(probe.atFanOutEnd.organization).toBeGreaterThanOrEqual(0);
+    expect(readsAtEnd).toBeGreaterThan(probe.atFanOutEnd.organization);
+    adapter.findMany = findMany;
     expect(lines.filter((line) => line.includes("cleanup after"))).toEqual([]);
   });
 
