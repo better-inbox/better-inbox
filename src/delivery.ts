@@ -1,5 +1,8 @@
+import type { ByoEventHandler } from "@byo-oss/core";
 import type { AuthContext, DBTransactionAdapter, User, Where } from "better-auth";
-import { findManyIn } from "./adapter";
+import { findManyIn, IN_CHUNK } from "./adapter";
+import { deliveryFailed, emit } from "./events";
+import { isPermanent } from "./permanent";
 import type {
   InboxPresence,
   Notification,
@@ -35,26 +38,6 @@ export type InboxChannel = {
    */
   deliver: (ctx: DeliveryContext) => Promise<void>;
 };
-
-/**
- * Throw from a channel's `deliver` for a send that will never succeed (an
- * invalid address, a hard bounce, a revoked token): the delivery is marked
- * `failed` without retrying.
- */
-export class PermanentDeliveryError extends Error {
-  readonly permanent = true;
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = "PermanentDeliveryError";
-  }
-}
-
-// duck-typed too, so a channel needn't import this package's class
-const isPermanent = (error: unknown) =>
-  error instanceof PermanentDeliveryError ||
-  (typeof error === "object" &&
-    error !== null &&
-    (error as { permanent?: unknown }).permanent === true);
 
 export type DeliveryRule<Channel extends string = string> = {
   channel: Channel;
@@ -96,6 +79,7 @@ export type ResolvedDeliveryOptions = {
   batchSize: number;
   leaseMs: number;
   immediateLimit: number;
+  onEvent: ByoEventHandler | undefined;
 };
 
 const PRESENCE_WRITE_INTERVAL = 60_000;
@@ -254,7 +238,11 @@ export type SweepResult = {
   skipped: number;
   retrying: number;
   failed: number;
-  /** More deliveries were due than the batch size; call again. */
+  /**
+   * Call again: more deliveries were due than the batch size, or the sweep
+   * stopped at `limit` stale sends with no attempts left after failing at
+   * least one on the capped page. So it can be true with nothing due to send.
+   */
   hasMore: boolean;
 };
 
@@ -276,17 +264,15 @@ export async function processDueDeliveries(
       value: new Date(now.getTime() - options.leaseMs),
     },
   ];
+  const staleCapped = await failExhaustedLeases(context, options, stale, limit);
+  // guarded: an exhausted row the loop above didn't reach (the limit cap)
+  // stays "sending" for the next sweep instead of being retried past maxAttempts
   await context.adapter.updateMany({
     model: "notificationDelivery",
     where: [
       ...stale,
-      { field: "attempts", operator: "gte", value: options.maxAttempts },
+      { field: "attempts", operator: "lt", value: options.maxAttempts },
     ],
-    update: { status: "failed", detail: "send did not finish" },
-  });
-  await context.adapter.updateMany({
-    model: "notificationDelivery",
-    where: stale,
     update: { status: "pending" },
   });
 
@@ -300,7 +286,97 @@ export async function processDueDeliveries(
     limit: limit + 1,
   });
   const result = await attemptDeliveries(context, due.slice(0, limit), options);
-  return { ...result, hasMore: due.length > limit };
+  return { ...result, hasMore: due.length > limit || staleCapped };
+}
+
+/**
+ * Marks stale leases that have used up their attempts as failed, one row at a
+ * time, and emits `notifications.delivery.failed` (`"unfinished"`) for each.
+ * The per-row guarded update is the compare-and-swap: of two overlapping
+ * sweeps, exactly one moves (and reports) a row. Examines at most `limit` rows;
+ * returns true only when it stopped at that cap with rows left after moving at
+ * least one on the capped page, so the sweep reports `hasMore`. Rows it can't
+ * move (row-level security, or another sweep took them) are left out of later
+ * pages in the same sweep, but they still count against `limit`: once `limit`
+ * of them (up to 180, IN_CHUNK twice over) come first in scan order, later
+ * exhausted rows wait.
+ */
+async function failExhaustedLeases(
+  context: AuthContext,
+  options: ResolvedDeliveryOptions,
+  stale: Where[],
+  limit: number,
+): Promise<boolean> {
+  const exhausted: Where[] = [
+    ...stale,
+    { field: "attempts", operator: "gte", value: options.maxAttempts },
+  ];
+  // ids whose guarded update moved nothing; capped at IN_CHUNK so the
+  // not_in list stays within D1's 100 parameters
+  const stuck: string[] = [];
+  let examined = 0;
+  while (examined < limit) {
+    const take = Math.min(IN_CHUNK, limit - examined);
+    const page = await context.adapter.findMany<NotificationDelivery>({
+      model: "notificationDelivery",
+      where:
+        stuck.length > 0
+          ? [...exhausted, { field: "id", operator: "not_in", value: stuck }]
+          : exhausted,
+      limit: take + 1,
+    });
+    if (page.length === 0) return false;
+    const rows = page.slice(0, take);
+    // defense in depth: a take of zero (a non-integer limit) must not spin
+    if (rows.length === 0) return false;
+    examined += rows.length;
+    const capped = page.length > take && examined >= limit;
+
+    const organizationIds = options.onEvent
+      ? new Map(
+          (
+            await findManyIn<Notification>(context.adapter, {
+              model: "notification",
+              field: "id",
+              values: rows.map((row) => row.notificationId),
+            })
+          ).map((n) => [n.id, n.organizationId]),
+        )
+      : undefined;
+
+    let moved = 0;
+    let unrecorded = false;
+    for (const row of rows) {
+      const updated = await context.adapter.updateMany({
+        model: "notificationDelivery",
+        where: [{ field: "id", value: row.id }, ...exhausted],
+        update: { status: "failed", detail: "send did not finish" },
+      });
+      if (updated !== 1) {
+        if (stuck.length < IN_CHUNK) stuck.push(row.id);
+        else unrecorded = true;
+        continue;
+      }
+      moved++;
+      await emit(
+        options.onEvent,
+        context,
+        context.adapter,
+        deliveryFailed(row, {
+          organizationId: organizationIds?.get(row.notificationId),
+          attempts: row.attempts,
+          reason: "unfinished",
+        }),
+      );
+    }
+    // don't report hasMore for a capped page this sweep couldn't move
+    if (capped) return moved > 0;
+    if (page.length <= take) return false;
+    // nothing moved, and some of it couldn't be excluded: the next page would
+    // come back the same, so stop rather than spin
+    if (moved === 0 && unrecorded) return false;
+  }
+  return false;
 }
 
 const CONCURRENCY = 10;
@@ -436,8 +512,19 @@ async function attemptDelivery(
     context.logger.error(
       `[@byo-oss/notifications] ${delivery.channel} delivery ${delivery.id} failed: ${detail}`,
     );
-    if (isPermanent(error) || claimed.attempts >= options.maxAttempts) {
+    const permanent = isPermanent(error);
+    if (permanent || claimed.attempts >= options.maxAttempts) {
       await finish({ status: "failed", detail });
+      await emit(
+        options.onEvent,
+        context,
+        context.adapter,
+        deliveryFailed(delivery, {
+          organizationId: notification.organizationId,
+          attempts: claimed.attempts,
+          reason: permanent ? "permanent" : "max_attempts",
+        }),
+      );
       return "failed";
     }
     const backoff = Math.min(

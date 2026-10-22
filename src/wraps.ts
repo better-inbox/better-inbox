@@ -1,8 +1,5 @@
-import {
-  PermanentDeliveryError,
-  type DeliveryContext,
-  type InboxChannel,
-} from "./delivery";
+import type { DeliveryContext, InboxChannel } from "./delivery";
+import { PermanentDeliveryError } from "./permanent";
 
 export type RenderedEmail = { subject: string; html: string; text: string };
 

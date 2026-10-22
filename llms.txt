@@ -4,7 +4,8 @@ In-app notifications as a better-auth plugin. Notifications are rows in the app'
 
 ## Install & wire
 
-npm install @byo-oss/notifications
+npm install @byo-oss/notifications @better-auth/core
+// requires better-auth 1.7.7+; install @better-auth/core at the same version as better-auth
 
 // server: lib/auth.ts
 import { inbox } from "@byo-oss/notifications";
@@ -25,6 +26,7 @@ import { InboxButton } from "@byo-oss/notifications/react";
 await auth.api.notify({ body: { userId, type: "comment.reply", title: "...", href: "/x", body: "...", data: {...} } });
 // org fan-out (requires better-auth organization plugin); one row per member:
 await auth.api.notify({ body: { organizationId, roles: ["owner","admin"], type: "billing.payment_failed", title: "..." } });
+// type must not start with "notifications." (reserved for the plugin's own events): notify throws BAD_REQUEST RESERVED_NOTIFICATION_TYPE, and inbox({ routes: { "notifications.x": ... } }) throws at creation ("uses a reserved type")
 // userId | organizationId | both. userId + organizationId writes one row for that member (throws USER_NOT_IN_ORGANIZATION if not a member). roles/excludeUserIds apply only to fan-out (rejected with userId). excludeUserIds skips e.g. the actor. Roles/exclusion leaving nobody returns { count: 0 }; an org with zero members throws. Fan-out capped at inbox({ maxFanout: 1000 }).
 
 ## Email if unread (optional; npm install @wraps.dev/email)
@@ -35,16 +37,37 @@ inbox({
   channels: { email: wrapsEmail({ from: "Acme <notify@acme.com>" /*, client: new WrapsEmail({...}), render: (ctx) => ({ subject, html, text }) */ }) },
   routes: { "billing.payment_failed": [{ channel: "email", ifUnreadAfter: { minutes: 15 }, throttle: { hours: 24 } }], "security.new_login": [{ channel: "email", cancelIfRead: false }] }, // keyed by type; "*" fallback; no rule = in-app only; a channel at most once per type
   shouldDeliver: ({ notification, user, channel }) => true, // your own opt-out check
-  // presenceWindow: 120000, maxAttempts: 5, batchSize: 100
+  // presenceWindow: 120000, maxAttempts: 5, batchSize: 100 (integer 1-1000)
 });
 await auth.api.processDeliveries({}); // REQUIRED from a cron (every minute): sends delayed emails and retries → { sent, skipped, retrying, failed, hasMore }
 // The email is skipped if the notification is read, or seen (seenAt, set once a row is ≥50% on screen for 1s in a visible tab), unless cancelIfRead: false. throttle: at most one sent email per (user, type, channel) per window; extras skipped with detail "throttled" (best-effort across concurrent processes). Impersonated sessions (admin plugin) don't count as presence. Users with no unread-count poll within presenceWindow are "away": ifUnreadAfter emails go out right away (sendNowIfAway: false to always wait). Due-now emails send inside notify only with advanced.backgroundTasks.handler, <=25 rows and outside a transaction; otherwise on the next sweep. At-least-once; atomic claim; backoff 1m doubling to 1h; rows in notificationDelivery (status pending|sending|sent|skipped|failed, detail).
 // A channel is { deliver({ notification, user, appUrl }) } that throws on failure (retries until maxAttempts) and doesn't mutate its input. throw new PermanentDeliveryError(msg) (or an error with permanent: true) to fail at once, e.g. a bad address. wrapsEmail does this when @wraps.dev/email rejects a missing or malformed `to` (ValidationError, field to / to[n]); throttling, network, SES and account errors retry. Bounces and suppressions come back as SES events later, not as send errors.
 // Test a custom channel (vitest, ESM only): import { testChannel, deliveryContext } from "@byo-oss/notifications/testing"; testChannel(() => myChannel(fake), { failing: () => myChannel(rejecting), permanentlyFailing?: () => myChannel(bouncing) })
 
+## Events (inbox({ onEvent }), after commit)
+
+import { createEventBus } from "@byo-oss/core";
+inbox({ onEvent: createEventBus([(event) => { /* event.type, event.userId, event.subject, event.data */ }]) });
+// type                                | userId    | organizationId           | subject                                  | data
+// notifications.notification.created  | recipient | the notification's, if set | { type: "notification", id }           | { notificationId, notificationType }
+// notifications.delivery.failed       | recipient | the notification's, if set | { type: "notificationDelivery", id }   | { deliveryId, notificationId, notificationType, channel, attempts, reason: "permanent"|"max_attempts"|"unfinished" }
+// actorId is always null. No title, body, href, data or channel error text. Exports: NOTIFICATIONS_EVENT_TYPES, NotificationsEvent, NotificationCreatedEvent, DeliveryFailedEvent, NotificationsEventType.
+// After commit: outside a transaction the handler runs before notify / processDeliveries returns. Of the calls that emit events, only notify joins a caller's transaction: inside runWithTransaction (from @better-auth/core/context) its events wait for the commit and are dropped on rollback. The sweep (processDeliveries, sweepAll) never joins one: its writes commit as they happen and its delivery.failed events fire at once, even if the caller rolls back; call it outside a transaction. A plain adapter.transaction(trx => ...) isn't joined at all (writes and events happen at once); wrapping it with runWithAdapter(trx, ...) joins the writes but fires their events before the commit. Pass { onAfterCommitHookError } to your runWithTransaction so an earlier after-commit hook's throw can't skip these.
+// A throwing/rejecting handler is logged ("onEvent failed for <type>") and never fails notify or the sweep.
+// One event per row: an org fan-out of N awaits N handler calls (bounded by maxFanout). No ordering across events. delivery.failed can repeat for one delivery (a send outliving its 5-minute lease is retried or failed as "unfinished" while the original finishes; the same cause by which a crash after SES accepted the email can send it twice). The original send can still succeed after an "unfinished" event (row ends sent): check the row before acting.
+// Adapters without transactions: events fire at once; a throw keeps rows and events. A third-party adapter whose transaction builds a new adapter object without real rollback drops events on a throw while its rows stay.
+// Never route notifications.* events back into notify (loop); notify rejects them, a forwarder that renames the type isn't caught.
+
+## @byo-oss/core hooks (byo)
+
+// the plugin declares byo: { sweep, deleteOrganizationData, deleteMemberData }; with organizationCleanup: false only sweep
+await sweepAll(auth) // from @byo-oss/core: runs the same sweep as processDeliveries; one cron route for every BYO plugin can replace the processDeliveries call
+await deleteOrganizationData(auth, organizationId) // from @byo-oss/core: fan-out reaches this plugin's cleanup; running it after the plugin's own cleanup is a no-op
+// a stale send with no attempts left is failed one row at a time, at most `limit` per sweep; hasMore can be true with nothing due (the sweep stopped at that cap after failing rows there), and exhausted rows past it stay "sending" until a later sweep; rows the sweep can't update still count against limit, so once limit of them (up to 180) come first, later exhausted rows wait
+
 ## Organization cleanup and export (server-only functions, not endpoints)
 
-// automatic after /organization/delete (org's rows), /organization/remove-member and /organization/leave (that member's rows in that org); inbox({ organizationCleanup: false }) turns it off
+// automatic after /organization/delete (org's rows), /organization/remove-member and /organization/leave (that member's rows in that org); inbox({ organizationCleanup: false }) turns it off, and also leaves notifications out of @byo-oss/core's deleteOrganizationData/deleteMemberData fan-out
 // deleting a user removes their notifications, deliveries and presence (FK cascade on SQL; a user-delete hook elsewhere)
 await deleteOrganizationData(auth, organizationId) // → { notifications }; for deletes made any other way
 await deleteMemberData(auth, { userId, organizationId }) // → { notifications }
@@ -72,6 +95,7 @@ const seenRef = useSeenOnView(markSeen, { delayMs: 1000, threshold: 0.5 }); // <
 
 ## Notes
 
+- 0.10: better-auth peer ^1.7.7 and a new required peer @better-auth/core (same version); notify rejects notifications.* types and inbox({ routes }) throws at creation for a notifications.* key; onEvent and byo hooks are new; stale sends with no attempts left are failed at most `limit` per sweep (hasMore can be true with nothing due, when the sweep stopped at the cap after failing rows there; rows past the cap stay "sending" until a later sweep); inbox() throws unless batchSize is an integer from 1 to 1000; no migration
 - notification fields: id, userId, organizationId?, type, title, body?, href?, data? (json), read (boolean), seenAt?, createdAt
 - 0.8: every reference has onDelete: "cascade" (regenerate drizzle/prisma migrations); org delete/remove/leave cleans up automatically; tab text is "Unread"/"All"
 - schema is documented in the README (Schema); uninstall: drop notificationDelivery, then inboxPresence and notification

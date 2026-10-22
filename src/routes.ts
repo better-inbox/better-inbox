@@ -10,7 +10,12 @@ import {
   touchPresence,
 } from "./delivery";
 import { INBOX_ERROR_CODES } from "./error-codes";
+import { emit, notificationCreated } from "./events";
 import type { Notification } from "./schema";
+
+// the plugin's own event types; a notification of one could feed an onEvent
+// that forwards events into notify back into itself
+const RESERVED_TYPE_PREFIX = "notifications.";
 
 export type ResolvedInboxOptions = ResolvedDeliveryOptions & {
   maxFanout: number;
@@ -42,7 +47,9 @@ const notifyBodySchema = z
  * Creates the notifications and their delivery rows. Inside a better-auth
  * transaction (`runWithTransaction`) they join it and commit or roll back with
  * it, and no email goes out until the transaction has committed: the next
- * `processDeliveries` sweep sends it.
+ * `processDeliveries` sweep sends it. `notifications.notification.created`
+ * fires per row once the rows have committed: before this returns outside a
+ * transaction, after the commit inside one, never on rollback.
  */
 export const notify = (options: ResolvedInboxOptions) =>
   createAuthEndpoint.serverOnly(
@@ -53,12 +60,27 @@ export const notify = (options: ResolvedInboxOptions) =>
     async (ctx) => {
       const { userId, organizationId, roles, excludeUserIds, ...payload } =
         ctx.body;
+      if (payload.type.startsWith(RESERVED_TYPE_PREFIX)) {
+        throw APIError.from(
+          "BAD_REQUEST",
+          INBOX_ERROR_CODES.RESERVED_NOTIFICATION_TYPE,
+        );
+      }
       // the caller's transaction when notify runs inside runWithTransaction, so
       // these rows commit or roll back with it; resolved once, used throughout
       const adapter = await getCurrentAdapter(ctx.context.adapter);
 
       const created = async (notifications: Notification[]) => {
         await scheduleDeliveries(ctx.context, adapter, notifications, options);
+        // one event per row, held until the caller's transaction commits
+        for (const notification of notifications) {
+          await emit(
+            options.onEvent,
+            ctx.context,
+            adapter,
+            notificationCreated(notification),
+          );
+        }
         return { count: notifications.length, notifications };
       };
 

@@ -11,4 +11,6 @@ export const INBOX_ERROR_CODES = defineErrorCodes({
   USER_NOT_IN_ORGANIZATION: "User is not a member of this organization",
   ORGANIZATION_HAS_NO_MEMBERS: "Organization has no members",
   FAN_OUT_LIMIT_EXCEEDED: "Organization member count exceeds maxFanout",
+  RESERVED_NOTIFICATION_TYPE:
+    'Notification types starting with "notifications." are reserved for the plugin\'s own events',
 });
