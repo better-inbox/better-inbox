@@ -53,7 +53,7 @@ No schema change and no new options. Behaviour changes:
 
 ## 0.10
 
-Migration:
+No schema change. To upgrade:
 
 - **Install `@better-auth/core`.** The `better-auth` peer is now `^1.7.7` (it was `^1.6.23`), and `@better-auth/core` `^1.7.7` is a new required peer, used for the after-commit hooks behind events. Install it at the same version as `better-auth`, and add it to any package that imports the auth client or server. `@byo-oss/core` is a dependency and installs itself.
 - **Don't forward `notifications.*` into `notify`.** If an `onEvent` handler turns events into notifications, skip the plugin's own types first. `notify` rejects them (`RESERVED_NOTIFICATION_TYPE`), and a `routes` key with that prefix throws when the plugin is created. Events are in [Events](/docs/notifications/events).
