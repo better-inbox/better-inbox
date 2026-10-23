@@ -6,7 +6,7 @@
       "name": "@byo-oss/notifications",
       "dependencies": {
         "@byo-oss/core": "^0.1.0",
-        "@byo-oss/mailer": "^0.1.1",
+        "@byo-oss/mailer": "^0.2.0",
         "zod": "^4.4.3",
       },
       "devDependencies": {
@@ -15,7 +15,7 @@
         "@testing-library/react": "^16.3.2",
         "@types/react": "^19.2.17",
         "@types/react-dom": "^19.2.3",
-        "@wraps.dev/email": "^0.15.0",
+        "@wraps.dev/email": "^0.15.1",
         "better-auth": "1.7.7",
         "happy-dom": "^20.10.6",
         "react-dom": "^19.2.7",
@@ -25,7 +25,7 @@
       },
       "peerDependencies": {
         "@better-auth/core": "^1.7.7",
-        "@wraps.dev/email": ">=0.15.0",
+        "@wraps.dev/email": ">=0.15.1",
         "better-auth": "^1.7.7",
         "react": ">=18",
         "vitest": ">=3",
@@ -124,7 +124,7 @@
 
     "@byo-oss/core": ["@byo-oss/core@0.1.0", "", { "peerDependencies": { "better-auth": "^1.7.7" } }, "sha512-aS+cMqZmYSN6pibS/GusG0MhiUoS9o66DwhR+IQCrAgbRysc4jdq4yGB2gFY35CaAaDS90Ilebpt1Y1vCyp3Sw=="],
 
-    "@byo-oss/mailer": ["@byo-oss/mailer@0.1.1", "", { "peerDependencies": { "@aws-sdk/client-sesv2": "^3.527.0", "@opencoredev/email-sdk": "^3.0.0", "@wraps.dev/email": ">=0.15.0", "vitest": ">=3" }, "optionalPeers": ["@aws-sdk/client-sesv2", "@opencoredev/email-sdk", "@wraps.dev/email", "vitest"] }, "sha512-gz+O9vvlNS+DB6RVioNGVGgRlYYqLJWb2R2zFlC7+m/BQFE69aRVkplzWbooUOugWB3eq2owyua9GGx0ILl12g=="],
+    "@byo-oss/mailer": ["@byo-oss/mailer@0.2.0", "", { "peerDependencies": { "@aws-sdk/client-sesv2": "^3.527.0", "@opencoredev/email-sdk": "^3.0.0", "@wraps.dev/email": ">=0.15.1", "vitest": ">=3" }, "optionalPeers": ["@aws-sdk/client-sesv2", "@opencoredev/email-sdk", "@wraps.dev/email", "vitest"] }, "sha512-X+u/G/IjZQ0NXA7emzQ1U0yO96u4Oc7pzXyyQR8fcrQePpvm3Xqiz9xYQxffK2JW7f8gw80K/qCXGWhDr2XvQg=="],
 
     "@emnapi/core": ["@emnapi/core@1.11.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.2", "tslib": "^2.4.0" } }, "sha512-RSvbQmHzdKzNsLYa/wHrbc3KN4sYLKAdPZxqiM2HATqv/SBk2/ENSHpvXGaLOMcsAyz0poEGqkmmKYG3OWiJEQ=="],
 
@@ -336,7 +336,7 @@
 
     "@vitest/utils": ["@vitest/utils@4.1.10", "", { "dependencies": { "@vitest/pretty-format": "4.1.10", "convert-source-map": "^2.0.0", "tinyrainbow": "^3.1.0" } }, "sha512-fy9am/HWxbaGt/Sawrp90vt6Y6jQwf1RX77cz3uwoJwJVMli/e1IEwRPnMNJ7vKfPTwo0diXifkpPvwH9v7nGA=="],
 
-    "@wraps.dev/email": ["@wraps.dev/email@0.15.0", "", { "dependencies": { "@aws-sdk/client-dynamodb": "^3.928.0", "@aws-sdk/client-s3": "^3.928.0", "@aws-sdk/client-ses": "^3.928.0", "@aws-sdk/client-sesv2": "^3.928.0", "@aws-sdk/client-ssm": "^3.928.0", "@aws-sdk/credential-providers": "^3.928.0", "@aws-sdk/lib-dynamodb": "^3.928.0", "@aws-sdk/s3-request-presigner": "^3.928.0", "aws4fetch": "^1.0.20", "zod": "^4.6.2" }, "peerDependencies": { "@react-email/components": ">=0.0.25", "react": "^18.0.0 || ^19.0.0" }, "optionalPeers": ["@react-email/components", "react"] }, "sha512-2FepHBLV2SgSOi4FxiHg6xJYcR8KWc8+Kw9sAOn2aEzDcDPYUujNWhJOSBv+6PF1difbPwHSluKPfg5WlVKFIA=="],
+    "@wraps.dev/email": ["@wraps.dev/email@0.15.1", "", { "dependencies": { "@aws-sdk/client-dynamodb": "^3.928.0", "@aws-sdk/client-s3": "^3.928.0", "@aws-sdk/client-ses": "^3.928.0", "@aws-sdk/client-sesv2": "^3.928.0", "@aws-sdk/client-ssm": "^3.928.0", "@aws-sdk/credential-providers": "^3.928.0", "@aws-sdk/lib-dynamodb": "^3.928.0", "@aws-sdk/s3-request-presigner": "^3.928.0", "aws4fetch": "^1.0.20", "zod": "^4.6.2" }, "peerDependencies": { "@react-email/components": ">=0.0.25", "react": "^18.0.0 || ^19.0.0" }, "optionalPeers": ["@react-email/components", "react"] }, "sha512-tgf32lplCHtA8mUIUz7bdIxlUvxrqm6DoKQ7MMnJjZrcF4jlFVZykykt3gP1uw9vlg1lkBM1FAIQvUpNkbj2UA=="],
 
     "acorn": ["acorn@8.17.0", "", { "bin": { "acorn": "bin/acorn" } }, "sha512-xRQbDb9BnwDafYNn6Vwl839DYVjqXYb1XVGtWAZ1kcDc6iwAL4hg3B1dZlRiuENFeO2H53gFG3in621AdERVAg=="],
 

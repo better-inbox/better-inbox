@@ -24,8 +24,8 @@ describe("package.json", () => {
     expect(pkg.dependencies?.["@byo-oss/core"]).toBe("^0.1.0");
   });
 
-  it("ships the ./mailer entry and depends on @byo-oss/mailer 0.1.1+", () => {
-    expect(pkg.dependencies?.["@byo-oss/mailer"]).toBe("^0.1.1");
+  it("ships the ./mailer entry and depends on @byo-oss/mailer 0.2+", () => {
+    expect(pkg.dependencies?.["@byo-oss/mailer"]).toBe("^0.2.0");
     expect(pkg.exports?.["./mailer"]).toEqual({
       types: "./dist/mailer.d.ts",
       import: "./dist/mailer.js",
