@@ -9,12 +9,6 @@ Route a notification type to email, and it is emailed only if nobody has read or
 
 ## Install and configure
 
-```sh
-npm install @wraps.dev/email
-```
-
-<Next>
-
 Email goes through a mailer from [`@byo-oss/mailer`](https://byo.dev/docs/mailer/quickstart). Install it yourself, since your app imports its adapter, along with the SDK for your provider. For Wraps, that's `@wraps.dev/email`:
 
 ```sh
@@ -50,54 +44,29 @@ inbox({
 
 In tests, `memoryMailer` from `@byo-oss/mailer` records messages instead of sending them.
 
-</Next>
-
-```ts title="lib/auth.ts"
-import { inbox } from "@byo-oss/notifications";
-import { wrapsEmail } from "@byo-oss/notifications/wraps";
-
-inbox({
-  appUrl: "https://app.acme.com", // turns href "/settings/billing" into a link
-  channels: {
-    email: wrapsEmail({ from: "Acme <notify@acme.com>" }),
-  },
-  routes: {
-    // in-app now; email after 15 minutes if still unread, or right away if the user isn't in the app
-    "billing.payment_failed": [{ channel: "email", ifUnreadAfter: { minutes: 15 } }],
-    // in-app and email, both right away; the email goes out even if it's read first
-    "security.new_login": [{ channel: "email", cancelIfRead: false }],
-    // at most one email an hour per user, however often it fires
-    "run.failed": [{ channel: "email", ifUnreadAfter: { minutes: 15 }, throttle: { hours: 1 } }],
-    // "*": [...] would apply to every type without its own entry; types with no rule stay in-app
-  },
-});
-```
-
 ## Routes
 
 `routes` maps each notification `type` to a list of delivery rules. Each rule names a channel from `channels`. A type with no rule stays in-app. Use `"*"` as a fallback for every type that has no entry of its own. Every field of a rule is listed on the [Options](/docs/notifications/options) page.
 
 ## The email channel
 
-<Next>
-
 `mailerChannel({ mailer, replyTo?, render? })`, from `@byo-oss/notifications/mailer`, sends through any `Mailer`. It takes no `from`, because the mailer owns the sender. `replyTo` sets a reply-to address. `render` replaces the default email (title, body and a View button) with `({ notification, user, appUrl }) => ({ subject, html, text })`.
 
 A `PermanentMailError` from the mailer fails the delivery at once, as `PermanentDeliveryError`. Any other error retries with backoff. An error marked `permanent: true` that isn't a `PermanentMailError` retries too: the mailer's contract says only a `PermanentMailError` means fail. These are the mailer's rules in [Delivery semantics](https://byo.dev/docs/mailer/delivery).
-
-`wrapsEmail` from `@byo-oss/notifications/wraps` still works, but it is deprecated and will be removed in a later breaking release. For new code, use `mailerChannel` with `wrapsMailer`, as above. See [Upgrading](/docs/notifications/upgrading#011).
-
-</Next>
-
-`wrapsEmail` sends through [`@wraps.dev/email`](https://wraps.dev) from your own AWS SES account, resolving credentials from the environment. Pass `client: new WrapsEmail({ region, ... })` to configure it. Pass `render: ({ notification, user, appUrl }) => ({ subject, html, text })` to replace the default email, which shows the title, the body and a View button.
 
 A channel is any object with a `deliver({ notification, user, appUrl })` method that throws on failure, so other providers are a few lines. See [Custom channels](/docs/notifications/channels).
 
 A throw retries. Throw `PermanentDeliveryError` (or any error with `permanent: true`) for a send that can never succeed, such as an invalid address, and the delivery fails at once.
 
-`wrapsEmail` does this for a recipient it can't send to. When `@wraps.dev/email` rejects `to` as missing or malformed, the delivery is marked `failed` at once, with the SDK's message in `detail`. Throttling, network errors and SES errors still retry, and so do account and sender problems (sending paused, an unverified sender domain, missing credentials), because fixing them clears the backlog without touching the recipient.
-
 SES doesn't report a bounce or a suppressed address as a send error. It accepts the email, and the bounce arrives later as an event. Those deliveries show as `sent`. To stop emailing an address that bounces, check the SES suppression list in your own code.
+
+### `wrapsEmail` (deprecated)
+
+`wrapsEmail` from `@byo-oss/notifications/wraps` still works, but it is deprecated and will be removed in a later breaking release. For new code, use `mailerChannel` with `wrapsMailer`, as above. See [Upgrading](/docs/notifications/upgrading#011).
+
+`wrapsEmail` sends through [`@wraps.dev/email`](https://wraps.dev) from your own AWS SES account, resolving credentials from the environment. Pass `client: new WrapsEmail({ region, ... })` to configure it. Pass `render: ({ notification, user, appUrl }) => ({ subject, html, text })` to replace the default email, which shows the title, the body and a View button.
+
+`wrapsEmail` does this for a recipient it can't send to. When `@wraps.dev/email` rejects `to` as missing or malformed, the delivery is marked `failed` at once, with the SDK's message in `detail`. Throttling, network errors and SES errors still retry, and so do account and sender problems (sending paused, an unverified sender domain, missing credentials), because fixing them clears the backlog without touching the recipient.
 
 ## Read and seen both cancel it
 
