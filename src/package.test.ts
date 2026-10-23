@@ -8,12 +8,13 @@ describe("package.json", () => {
   const pkg = JSON.parse(read("package.json")) as {
     version: string;
     dependencies?: Record<string, string>;
+    exports?: Record<string, unknown>;
     peerDependencies?: Record<string, string>;
     peerDependenciesMeta?: Record<string, { optional?: boolean }>;
   };
 
-  it("is 0.10.0 on the better-auth 1.7.7 baseline", () => {
-    expect(pkg.version).toBe("0.10.0");
+  it("is 0.11.0 on the better-auth 1.7.7 baseline", () => {
+    expect(pkg.version).toBe("0.11.0");
     expect(pkg.peerDependencies?.["better-auth"]).toBe("^1.7.7");
     // emit imports @better-auth/core/context at runtime
     expect(pkg.peerDependencies?.["@better-auth/core"]).toBe("^1.7.7");
@@ -22,6 +23,23 @@ describe("package.json", () => {
     );
     expect(pkg.dependencies?.["@byo-oss/core"]).toBe("^0.1.0");
   });
+
+  it("ships the ./mailer entry and depends on @byo-oss/mailer 0.1.1+", () => {
+    expect(pkg.dependencies?.["@byo-oss/mailer"]).toBe("^0.1.1");
+    expect(pkg.exports?.["./mailer"]).toEqual({
+      types: "./dist/mailer.d.ts",
+      import: "./dist/mailer.js",
+      require: "./dist/mailer.cjs",
+    });
+  });
+
+  it.each(["README.md", "docs/upgrading.mdx"])(
+    "%s has the 0.11 upgrade notes",
+    (file) => {
+      expect(read(file)).toContain("mailerChannel");
+      expect(read(file)).not.toContain("(unreleased)");
+    },
+  );
 
   it.each(["README.md", "docs/upgrading.mdx"])(
     "%s has the 0.10 upgrade notes",

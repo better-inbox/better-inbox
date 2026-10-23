@@ -36,6 +36,12 @@ A `routes` key that starts with `notifications.` throws when the plugin is creat
 
 For the `schema` option, see [Schema](/docs/notifications/schema).
 
+<Next>
+
+`channels` takes any `InboxChannel`, by name. The built-in email channel is `mailerChannel`, from `@byo-oss/notifications/mailer`, which sends through any `Mailer` from `@byo-oss/mailer`. See [Email if unread](/docs/notifications/email). `wrapsEmail` is deprecated.
+
+</Next>
+
 ## DeliveryRule
 
 Each `routes` entry is a list of these.

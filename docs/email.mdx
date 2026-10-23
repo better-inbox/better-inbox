@@ -13,6 +13,45 @@ Route a notification type to email, and it is emailed only if nobody has read or
 npm install @wraps.dev/email
 ```
 
+<Next>
+
+Email goes through a mailer from [`@byo-oss/mailer`](https://byo.dev/docs/mailer/quickstart). Install it yourself, since your app imports its adapter, along with the SDK for your provider. For Wraps, that's `@wraps.dev/email`:
+
+```sh
+npm install @byo-oss/mailer @wraps.dev/email
+```
+
+```ts title="lib/auth.ts"
+import { inbox } from "@byo-oss/notifications";
+import { mailerChannel } from "@byo-oss/notifications/mailer";
+import { wrapsMailer } from "@byo-oss/mailer/wraps";
+
+inbox({
+  appUrl: "https://app.acme.com", // turns href "/settings/billing" into a link
+  channels: {
+    // the mailer owns the sender address, so the channel takes no `from`
+    email: mailerChannel({ mailer: wrapsMailer({ from: "Acme <notify@acme.com>" }) }),
+  },
+  routes: {
+    // in-app now; email after 15 minutes if still unread, or right away if the user isn't in the app
+    "billing.payment_failed": [{ channel: "email", ifUnreadAfter: { minutes: 15 } }],
+    // in-app and email, both right away; the email goes out even if it's read first
+    "security.new_login": [{ channel: "email", cancelIfRead: false }],
+    // at most one email an hour per user, however often it fires
+    "run.failed": [{ channel: "email", ifUnreadAfter: { minutes: 15 }, throttle: { hours: 1 } }],
+  },
+});
+```
+
+`wrapsMailer` sends through your own AWS SES account. See the [Wraps page](https://byo.dev/docs/mailer/wraps) for `from`, `region`, `credentials` and `client`. Other providers use the same `mailerChannel`:
+
+- **Your own SES client.** `sesMailer` from `@byo-oss/mailer/ses` takes an `SESv2Client` you already have. Install `@aws-sdk/client-sesv2` too. See [your own SES client](https://byo.dev/docs/mailer/ses).
+- **Resend, Postmark, SendGrid and others.** `emailSdkMailer` from `@byo-oss/mailer/email-sdk` takes a client you build with `@opencoredev/email-sdk` (`npm install @opencoredev/email-sdk`). Pass `telemetry: false` to `createEmailClient`, as the [email-sdk page](https://byo.dev/docs/mailer/email-sdk) does. `emailSdkMailer` throws a `TypeError` when it is created if the client holds an adapter that is not on that page's list.
+
+In tests, `memoryMailer` from `@byo-oss/mailer` records messages instead of sending them.
+
+</Next>
+
 ```ts title="lib/auth.ts"
 import { inbox } from "@byo-oss/notifications";
 import { wrapsEmail } from "@byo-oss/notifications/wraps";
@@ -39,6 +78,16 @@ inbox({
 `routes` maps each notification `type` to a list of delivery rules. Each rule names a channel from `channels`. A type with no rule stays in-app. Use `"*"` as a fallback for every type that has no entry of its own. Every field of a rule is listed on the [Options](/docs/notifications/options) page.
 
 ## The email channel
+
+<Next>
+
+`mailerChannel({ mailer, replyTo?, render? })`, from `@byo-oss/notifications/mailer`, sends through any `Mailer`. It takes no `from`, because the mailer owns the sender. `replyTo` sets a reply-to address. `render` replaces the default email (title, body and a View button) with `({ notification, user, appUrl }) => ({ subject, html, text })`.
+
+A `PermanentMailError` from the mailer fails the delivery at once, as `PermanentDeliveryError`. Any other error retries with backoff. These are the mailer's rules in [Delivery semantics](https://byo.dev/docs/mailer/delivery).
+
+`wrapsEmail` from `@byo-oss/notifications/wraps` still works, but it is deprecated and will be removed in a later breaking release. For new code, use `mailerChannel` with `wrapsMailer`, as above. See [Upgrading](/docs/notifications/upgrading#011).
+
+</Next>
 
 `wrapsEmail` sends through [`@wraps.dev/email`](https://wraps.dev) from your own AWS SES account, resolving credentials from the environment. Pass `client: new WrapsEmail({ region, ... })` to configure it. Pass `render: ({ notification, user, appUrl }) => ({ subject, html, text })` to replace the default email, which shows the title, the body and a View button.
 

@@ -12,7 +12,7 @@ The same steps, with checks, ship as a skill: `skills/byo-notifications/SKILL.md
 4. UI: render `<InboxButton client={authClient} onNavigate={...} />` from `@byo-oss/notifications/react` once, in the app shell. Pass the router's navigate to `onNavigate`.
 5. Tailwind v4: add `@source "<path>/node_modules/@byo-oss/notifications/dist";` to the CSS, or the components render unstyled.
 6. Send with `auth.api.notify({ body })` from server code only. It is never an HTTP route.
-7. With email routes: add `@wraps.dev/email`, configure `channels` and `routes`, and call `auth.api.processDeliveries({})` from a cron every minute. Without the cron, delayed emails and retries never go out.
+7. With email routes: install `@byo-oss/mailer` and your provider's SDK (`@wraps.dev/email` for `wrapsMailer`), pass `mailerChannel({ mailer })` in `channels`, configure `channels` and `routes`, and call `auth.api.processDeliveries({})` from a cron every minute. Without the cron, delayed emails and retries never go out.
 8. Events and core: pass `onEvent` built with `createEventBus` from `@byo-oss/core`; `sweepAll(auth)` may replace the `processDeliveries` cron. Events fire after the write commits. Of the calls that emit events, only `notify` joins a caller's `runWithTransaction` (its events wait for the commit, never fire on rollback). The sweep never joins one: its `delivery.failed` events fire at once, so call it outside a transaction.
 
 ## Events

@@ -84,3 +84,21 @@ The plugin also declares `byo` hooks, so [`@byo-oss/core`](https://github.com/by
 
 `exportNotificationsData` pages by `createdAt` and resumes after the last row it returned, so a row deleted mid-export (a member leaving, say) doesn't make the next page skip one. The cursor is opaque. A cursor from an earlier release (a bare number) throws: start over with no cursor and keep one copy of each `id`. See [Upgrading](/docs/notifications/upgrading#09).
 
+<Next>
+
+## Channel exports
+
+`@byo-oss/notifications/mailer` exports `mailerChannel`, which returns an `InboxChannel` for `inbox({ channels })`:
+
+| Option | Type | Meaning |
+|--------|------|---------|
+| `mailer` | `Mailer` | Any mailer from `@byo-oss/mailer`. It owns the sender address |
+| `replyTo` | string, optional | Reply-to address on every email |
+| `render` | `(ctx) => { subject, html, text }`, optional | Builds the email, sync or async. Default: the title, the body and a View button |
+
+The entry also re-exports the `Mailer`, `MailMessage` and `MailResult` types from `@byo-oss/mailer`, and the `RenderedEmail` type with the `renderEmail` and `notificationUrl` helpers, for a custom `render` that wraps the default email or builds the link.
+
+`@byo-oss/notifications/wraps` exports `wrapsEmail`, which is deprecated in 0.11. Use `mailerChannel` with `wrapsMailer` from `@byo-oss/mailer/wraps`.
+
+</Next>
+
