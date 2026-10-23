@@ -13,7 +13,7 @@ npm install @byo-oss/notifications @better-auth/core
 - **A better-auth plugin, not a platform.** No services to deploy, no dashboard SaaS. The `notification` table lives in your own database via better-auth's adapter (drizzle, prisma, kysely — whatever you already use).
 - **Addressed to users, not email addresses.** `notify({ userId })` uses your better-auth user ids. Delete a user and their notifications go with them.
 - **Organization-aware.** Notify a whole org — optionally filtered by role — via the better-auth organization plugin: `notify({ organizationId, roles: ["owner", "admin"] })`.
-- **Email when it matters.** Route a notification type to email and it goes out only if the notification is still unread after a delay, or right away if the user isn't in the app. [Wraps](https://wraps.dev) sends it through your own AWS SES account.
+- **Email when it matters.** Route a notification type to email and it goes out only if the notification is still unread after a delay, or right away if the user isn't in the app. It sends through any [`@byo-oss/mailer`](https://byo.dev/docs/mailer/quickstart) adapter: [Wraps](https://wraps.dev) and your own AWS SES account, an SES client you already have, or [email-sdk](https://byo.dev/docs/mailer/email-sdk) providers such as Resend and Postmark.
 - **One React component.** `<InboxButton />` gives you the bell, unread badge, and inbox panel, styled with shadcn CSS variables (works with any shadcn theme, zero runtime dependencies, no shadcn required).
 
 > Community plugin — not affiliated with the better-auth team.
@@ -192,17 +192,19 @@ Called inside a better-auth transaction (`runWithTransaction`, as in a `@better-
 Route a notification type to email, and it is emailed only if nobody has read or seen it in the app first. The in-app row is always written; email is a follow-up to it.
 
 ```
-npm install @wraps.dev/email
+npm install @byo-oss/mailer @wraps.dev/email
 ```
 
 ```ts
 import { inbox } from "@byo-oss/notifications";
-import { wrapsEmail } from "@byo-oss/notifications/wraps";
+import { mailerChannel } from "@byo-oss/notifications/mailer";
+import { wrapsMailer } from "@byo-oss/mailer/wraps";
 
 inbox({
   appUrl: "https://app.acme.com", // turns href "/settings/billing" into a link
   channels: {
-    email: wrapsEmail({ from: "Acme <notify@acme.com>" }),
+    // the mailer owns the sender address, so the channel takes no `from`
+    email: mailerChannel({ mailer: wrapsMailer({ from: "Acme <notify@acme.com>" }) }),
   },
   routes: {
     // in-app now; email after 15 minutes if still unread, or right away if the user isn't in the app
@@ -216,7 +218,9 @@ inbox({
 });
 ```
 
-`wrapsEmail` sends through [`@wraps.dev/email`](https://wraps.dev) from your own AWS SES account, resolving credentials from the environment. Pass `client: new WrapsEmail({ region, ... })` to configure it, and `render: ({ notification, user, appUrl }) => ({ subject, html, text })` to replace the default email (title, body and a View button). A channel is any `{ deliver({ notification, user, appUrl }) }` that throws on failure, so other providers are a few lines. A throw retries; throw `PermanentDeliveryError` (or any error with `permanent: true`) for a send that can never succeed, such as an invalid address, and the delivery fails at once. `wrapsEmail` does this for a missing or malformed recipient address; SES reports bounces and suppressed addresses later, as events, so those still show as `sent`.
+`mailerChannel({ mailer, replyTo?, render? })` from `@byo-oss/notifications/mailer` sends through any `Mailer` from [`@byo-oss/mailer`](https://byo.dev/docs/mailer/quickstart), which your app installs alongside this package, since it imports the adapter, plus the SDK your provider needs. `wrapsMailer` (`@byo-oss/mailer/wraps`) sends through your own AWS SES account with [`@wraps.dev/email`](https://wraps.dev). `sesMailer` (`@byo-oss/mailer/ses`) takes an `SESv2Client` you already have. `emailSdkMailer` (`@byo-oss/mailer/email-sdk`) takes an [email-sdk](https://byo.dev/docs/mailer/email-sdk) client for Resend, Postmark, SendGrid and others. `replyTo` sets a reply-to address, and `render: ({ notification, user, appUrl }) => ({ subject, html, text })` replaces the default email (title, body and a View button). A `PermanentMailError` from the mailer fails the delivery at once, as `PermanentDeliveryError`; any other error retries, even one marked `permanent: true`. A channel is any `{ deliver({ notification, user, appUrl }) }` that throws on failure, so other providers are a few lines. A throw retries; throw `PermanentDeliveryError` (or any error with `permanent: true`) for a send that can never succeed, such as an invalid address, and the delivery fails at once. SES reports bounces and suppressed addresses later, as events, so those still show as `sent`.
+
+`wrapsEmail` from `@byo-oss/notifications/wraps` still works, but it is deprecated and will be removed in a later breaking release. Use `mailerChannel` with `wrapsMailer` for new code. It sends through `@wraps.dev/email` from your own AWS SES account, and takes `client: new WrapsEmail({ region, ... })` and `render` as above.
 
 **Read and seen both cancel it.** Clicking a notification marks it read. An unread row in the open panel is marked *seen* (`seenAt`) once at least half of it has been on screen for a second while the tab is visible. Rows below the scroll, or a panel flicked open and shut, don't count. Seen doesn't touch the badge or `read`, but it does cancel a pending email. For alerts whose email is the record, such as security events, set `cancelIfRead: false` and it goes out regardless.
 
@@ -439,6 +443,23 @@ index("notification_delivery_notification_idx").on(table.notificationId)
 // only if you export without an organizationId:
 index("notification_created_idx").on(table.createdAt)
 ```
+
+## Upgrading to 0.11
+
+No schema change and no new `inbox()` options.
+
+- **New: `mailerChannel`.** `mailerChannel({ mailer, replyTo?, render? })`, from `@byo-oss/notifications/mailer`, sends email through any `Mailer` from `@byo-oss/mailer`. The mailer owns the sender, so the channel has no `from`. Install `@byo-oss/mailer` (0.1.1 or later) in your app, since your code imports its adapter, along with the SDK your mailer needs, such as `@wraps.dev/email` for `wrapsMailer`.
+- **`wrapsEmail` is deprecated.** It still works and is unchanged, but it will be removed in a later breaking release. Move to `mailerChannel` with `wrapsMailer`:
+
+```ts
+// before
+channels: { email: wrapsEmail({ from: "Acme <notify@acme.com>", client: new WrapsEmail({ region }), render }) },
+
+// after
+channels: { email: mailerChannel({ mailer: wrapsMailer({ from: "Acme <notify@acme.com>", client: new WrapsEmail({ region }) }), render }) },
+```
+
+- **Check the differences.** `wrapsMailer` differs from `wrapsEmail` in four ways. It fails permanently on every `@wraps.dev/email` `ValidationError` (a malformed `from`, `replyTo` or recipient, or an empty subject) and on SES `MessageRejected` and `InvalidParameterValue`, where `wrapsEmail` fails only a bad recipient at once and retries the rest, so fixing the config no longer rescues deliveries already queued. It throws a `TypeError` when it is created if `from` is empty, where `wrapsEmail` failed at the first send. Its `client` must resolve `{ messageId }`, so a fake or wrapper that returns anything else, such as a `WrapsEmailSender`, needs changing. And it sends a non-ASCII display name in `from` RFC 2047 encoded, which needs `@byo-oss/mailer` 0.1.1 or later (0.1.0 sends it as given).
 
 ## Upgrading to 0.10
 

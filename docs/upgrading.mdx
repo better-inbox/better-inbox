@@ -69,3 +69,28 @@ New:
 - **`onEvent`**, with `notifications.notification.created` and `notifications.delivery.failed`, delivered after commit. See [Events](/docs/notifications/events). Of the calls that emit events, only `notify` joins a caller's transaction. Call `processDeliveries` (or `sweepAll`) outside one: its writes commit as they happen, and its `delivery.failed` events fire at once.
 - **`byo` hooks** for `@byo-oss/core` (`sweepAll`, `deleteOrganizationData`, `deleteMemberData`). The cleanups are left out under `organizationCleanup: false`.
 - **`NOTIFICATIONS_EVENT_TYPES`** and the event types (`NotificationsEvent`, `NotificationCreatedEvent`, `DeliveryFailedEvent`), exported for routing on an event bus.
+
+<Next>
+
+## 0.11
+
+No schema change and no new `inbox()` options. To upgrade:
+
+- **New: `mailerChannel`.** `mailerChannel({ mailer, replyTo?, render? })`, from `@byo-oss/notifications/mailer`, sends email through any `Mailer` from `@byo-oss/mailer`. The mailer owns the sender, so the channel has no `from`. Install `@byo-oss/mailer` (0.1.1 or later) in your app, since your code imports its adapter, along with the SDK your mailer needs, such as `@wraps.dev/email` for `wrapsMailer`.
+- **`wrapsEmail` is deprecated.** It still works and is unchanged, but it will be removed in a later breaking release. Move to `mailerChannel` with `wrapsMailer`. `from` and `render` map across as below; `client` maps only if it returns `{ messageId }` (see the differences):
+
+```ts title="lib/auth.ts"
+import { WrapsEmail } from "@wraps.dev/email";
+import { mailerChannel } from "@byo-oss/notifications/mailer";
+import { wrapsMailer } from "@byo-oss/mailer/wraps";
+
+// before
+channels: { email: wrapsEmail({ from: "Acme <notify@acme.com>", client: new WrapsEmail({ region }), render }) },
+
+// after
+channels: { email: mailerChannel({ mailer: wrapsMailer({ from: "Acme <notify@acme.com>", client: new WrapsEmail({ region }) }), render }) },
+```
+
+- **Check the differences.** `wrapsMailer` differs from `wrapsEmail` in four ways. It fails permanently on every `@wraps.dev/email` `ValidationError` (a malformed `from`, `replyTo` or recipient, or an empty subject) and on SES `MessageRejected` and `InvalidParameterValue`, where `wrapsEmail` fails only a bad recipient at once and retries the rest, so fixing the config no longer rescues deliveries already queued. It throws a `TypeError` when it is created if `from` is empty, where `wrapsEmail` failed at the first send. Its `client` must resolve `{ messageId }`, so a fake or wrapper that returns anything else, such as a `WrapsEmailSender`, needs changing. And it sends a non-ASCII display name in `from` RFC 2047 encoded, which needs `@byo-oss/mailer` 0.1.1 or later (0.1.0 sends it as given). See [Wraps](https://byo.dev/docs/mailer/wraps).
+
+</Next>
