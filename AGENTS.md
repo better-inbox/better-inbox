@@ -35,7 +35,7 @@ The same steps, with checks, ship as a skill: `skills/byo-notifications/SKILL.md
 
 ## Working on this repo
 
-- `bun install`, then `bun run typecheck`, `bun run test` and `bun run build`.
+- `bun install`, then `bun run typecheck`, `bun run test`, `bun run build` and, after the build, `bun run test:dist` (scans `dist/` for what each entry imports).
 - Tests run against a real better-auth instance on the memory adapter (`src/test-utils.ts`).
 - Releases: bump `package.json`, merge, tag `v<version>`. The release workflow publishes through npm trusted publishing.
 - Docs: `docs/*.mdx` is byo.dev/docs/notifications. A public change (exports, options, peer dependencies, documented behaviour) updates `docs/` in the same PR, inside `<Next>` until it's on npm. `docs/README.md` has the format.

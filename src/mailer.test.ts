@@ -1,7 +1,7 @@
 import { memoryMailer, type Mailer, type MailMessage, PermanentMailError } from "@byo-oss/mailer";
 import { describe, expect, it, vi } from "vitest";
 import { mailerChannel } from "./mailer";
-import { PermanentDeliveryError } from "./permanent";
+import { isPermanent, PermanentDeliveryError } from "./permanent";
 import { createTestAuth, signUpUser } from "./test-utils";
 import { deliveryContext, testChannel } from "./testing";
 
@@ -167,9 +167,9 @@ describe("mailerChannel errors", () => {
     expect(error.cause).toBe(branded);
   });
 
-  it("rethrows an unbranded error as it is, even one marked permanent", async () => {
-    // the mailer contract says only a PermanentMailError means fail, so the
-    // channel maps nothing else. (The sweep still honours `permanent: true`.)
+  it("retries an unbranded error marked permanent, since only a PermanentMailError means fail", async () => {
+    // the sweep fails anything with `permanent: true`, so the channel
+    // rewraps it without the mark, keeping the message and the cause
     const unbranded = Object.assign(new Error("odd"), { permanent: true });
     const channel = mailerChannel({
       mailer: {
@@ -179,7 +179,14 @@ describe("mailerChannel errors", () => {
       },
     });
 
-    await expect(channel.deliver(deliveryContext())).rejects.toBe(unbranded);
+    const error = (await channel
+      .deliver(deliveryContext())
+      .catch((e: unknown) => e)) as Error;
+    expect(error).not.toBe(unbranded);
+    expect(error).not.toBeInstanceOf(PermanentDeliveryError);
+    expect(isPermanent(error)).toBe(false);
+    expect(error.message).toBe("odd");
+    expect(error.cause).toBe(unbranded);
   });
 
   it("maps a PermanentMailError from this copy to PermanentDeliveryError", async () => {

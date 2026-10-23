@@ -43,6 +43,7 @@
   "scripts": {
     "build": "rm -rf dist && tsup && node -e \"['index.d.ts','client.d.ts','wraps.d.ts','mailer.d.ts','testing.d.ts','react/index.d.ts','react/index.js','index.js','client.js','wraps.js','mailer.js','testing.js'].forEach(f => require('fs').accessSync('dist/' + f))\"",
     "test": "vitest run",
+    "test:dist": "vitest run --config vitest.dist.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": ["better-auth", "byo", "notifications", "inbox", "in-app", "react", "plugin"],

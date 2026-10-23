@@ -65,7 +65,7 @@ channels: {
 },
 ```
 
-It takes no `from`, because the mailer owns the sender. A `PermanentMailError` from the mailer becomes a `PermanentDeliveryError`, and any other error retries. The `wrapsEmail` channel is deprecated; see [Email if unread](/docs/notifications/email).
+It takes no `from`, because the mailer owns the sender. A `PermanentMailError` from the mailer becomes a `PermanentDeliveryError`, and any other error retries, even one marked `permanent: true`. The `wrapsEmail` channel is deprecated; see [Email if unread](/docs/notifications/email).
 
 </Next>
 

@@ -83,7 +83,7 @@ inbox({
 
 `mailerChannel({ mailer, replyTo?, render? })`, from `@byo-oss/notifications/mailer`, sends through any `Mailer`. It takes no `from`, because the mailer owns the sender. `replyTo` sets a reply-to address. `render` replaces the default email (title, body and a View button) with `({ notification, user, appUrl }) => ({ subject, html, text })`.
 
-A `PermanentMailError` from the mailer fails the delivery at once, as `PermanentDeliveryError`. Any other error retries with backoff. These are the mailer's rules in [Delivery semantics](https://byo.dev/docs/mailer/delivery).
+A `PermanentMailError` from the mailer fails the delivery at once, as `PermanentDeliveryError`. Any other error retries with backoff. An error marked `permanent: true` that isn't a `PermanentMailError` retries too: the mailer's contract says only a `PermanentMailError` means fail. These are the mailer's rules in [Delivery semantics](https://byo.dev/docs/mailer/delivery).
 
 `wrapsEmail` from `@byo-oss/notifications/wraps` still works, but it is deprecated and will be removed in a later breaking release. For new code, use `mailerChannel` with `wrapsMailer`, as above. See [Upgrading](/docs/notifications/upgrading#011).
 

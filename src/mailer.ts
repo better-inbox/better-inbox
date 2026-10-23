@@ -1,7 +1,7 @@
 import { type Mailer, isPermanentMailError } from "@byo-oss/mailer";
 import type { DeliveryContext, InboxChannel } from "./delivery";
 import { type RenderedEmail, renderEmail } from "./email";
-import { PermanentDeliveryError } from "./permanent";
+import { isPermanent, PermanentDeliveryError } from "./permanent";
 
 export type { Mailer, MailMessage, MailResult } from "@byo-oss/mailer";
 export { notificationUrl, renderEmail, type RenderedEmail } from "./email";
@@ -41,6 +41,15 @@ export function mailerChannel(options: MailerChannelOptions): InboxChannel {
         if (isPermanentMailError(error)) {
           throw new PermanentDeliveryError(
             error instanceof Error && error.message ? error.message : "Send rejected",
+            { cause: error },
+          );
+        }
+        // The Mailer contract retries everything else. The sweep fails any
+        // error marked `permanent`, so one that isn't a PermanentMailError
+        // is rewrapped without the mark.
+        if (isPermanent(error)) {
+          throw new Error(
+            error instanceof Error ? error.message : String(error),
             { cause: error },
           );
         }
