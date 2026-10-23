@@ -5,7 +5,7 @@ group: guides
 order: 4
 ---
 
-A channel delivers a notification somewhere outside the app. Email through Wraps is one. Any object with a `deliver` method can be a channel. Register it in `channels` under a name, then route notification types to it by that name in `routes`.
+A channel delivers a notification somewhere outside the app. Email through a mailer is one. Any object with a `deliver` method can be a channel. Register it in `channels` under a name, then route notification types to it by that name in `routes`.
 
 ## The InboxChannel interface
 
@@ -27,7 +27,7 @@ type DeliveryContext = {
 - **Join relative links yourself.** `appUrl` is there so you can turn a relative `href` into a full link.
 - **Expect repeats.** Deliveries are at-least-once, so a send can repeat after a crash.
 
-A channel's `deliver` gets the same `{ notification, user, appUrl }` shape that `wrapsEmail` uses for its `render` function. See [Email if unread](/docs/notifications/email) for routing a type to a channel.
+A channel's `deliver` gets the same `{ notification, user, appUrl }` shape that `mailerChannel` uses for its `render` function. See [Email if unread](/docs/notifications/email) for routing a type to a channel.
 
 Throw `PermanentDeliveryError` (or any error with `permanent: true`) for a send that will never succeed, such as an invalid address, a hard bounce or a revoked token. The delivery is then marked `failed` without retrying.
 
@@ -47,9 +47,7 @@ testChannel(() => slackChannel({ fetch: fakeFetch }), {
 
 It checks that `deliver` resolves for full and minimal notifications and for relative and absolute links. It also checks that `deliver` doesn't change its input, and that it throws when the send fails, which is what makes a delivery retry. If your channel reports sends that can never succeed, pass `permanentlyFailing` too. It checks that those throw a `PermanentDeliveryError`.
 
-`deliveryContext(overrides)` builds a sample context for your own tests. The built-in Wraps channel runs the same suite.
-
-<Next>
+`deliveryContext(overrides)` builds a sample context for your own tests. The built-in email channels run the same suite.
 
 ## Email channels
 
@@ -66,6 +64,4 @@ channels: {
 ```
 
 It takes no `from`, because the mailer owns the sender. A `PermanentMailError` from the mailer becomes a `PermanentDeliveryError`, and any other error retries, even one marked `permanent: true`. The `wrapsEmail` channel is deprecated; see [Email if unread](/docs/notifications/email).
-
-</Next>
 

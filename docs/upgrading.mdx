@@ -70,8 +70,6 @@ New:
 - **`byo` hooks** for `@byo-oss/core` (`sweepAll`, `deleteOrganizationData`, `deleteMemberData`). The cleanups are left out under `organizationCleanup: false`.
 - **`NOTIFICATIONS_EVENT_TYPES`** and the event types (`NotificationsEvent`, `NotificationCreatedEvent`, `DeliveryFailedEvent`), exported for routing on an event bus.
 
-<Next>
-
 ## 0.11
 
 No schema change and no new `inbox()` options. To upgrade:
@@ -92,5 +90,3 @@ channels: { email: mailerChannel({ mailer: wrapsMailer({ from: "Acme <notify@acm
 ```
 
 - **Check the differences.** `wrapsMailer` differs from `wrapsEmail` in four ways. It fails permanently on every `@wraps.dev/email` `ValidationError` (a malformed `from`, `replyTo` or recipient, or an empty subject) and on SES `MessageRejected` and `InvalidParameterValue`, where `wrapsEmail` fails only a bad recipient at once and retries the rest, so fixing the config no longer rescues deliveries already queued. It throws a `TypeError` when it is created if `from` is empty, where `wrapsEmail` failed at the first send. Its `client` must resolve `{ messageId }`, so a fake or wrapper that returns anything else, such as a `WrapsEmailSender`, needs changing. And it sends a non-ASCII display name in `from` RFC 2047 encoded, which needs `@byo-oss/mailer` 0.1.1 or later (0.1.0 sends it as given). See [Wraps](https://byo.dev/docs/mailer/wraps).
-
-</Next>

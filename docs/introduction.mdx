@@ -18,7 +18,7 @@ Formerly `better-inbox`. The API is the same, so change your imports. See [Upgra
 - **A better-auth plugin, not a platform.** No services to deploy, no dashboard SaaS. The `notification` table lives in your own database via better-auth's adapter (drizzle, prisma, kysely, whatever you already use).
 - **Addressed to users, not email addresses.** `notify({ userId })` uses your better-auth user ids. Delete a user and their notifications go with them.
 - **Organization-aware.** Notify a whole org, optionally filtered by role, through the better-auth organization plugin: `notify({ organizationId, roles: ["owner", "admin"] })`. See [Notify an organization](/docs/notifications/organizations).
-- **Email when it matters.** Route a notification type to email and it goes out only if the notification is still unread after a delay, or right away if the user isn't in the app. [Wraps](https://wraps.dev) sends it through your own AWS SES account. See [Email if unread](/docs/notifications/email).
+- **Email when it matters.** Route a notification type to email and it goes out only if the notification is still unread after a delay, or right away if the user isn't in the app. It sends through any [`@byo-oss/mailer`](https://byo.dev/docs/mailer/quickstart) adapter: Wraps on your own AWS SES account, your own SES client, or a provider such as Resend or Postmark. See [Email if unread](/docs/notifications/email).
 - **One React component.** `<InboxButton />` gives you the bell, unread badge, and inbox panel, styled with shadcn CSS variables. It works with any shadcn theme, has zero runtime dependencies, and doesn't require shadcn. See [React components](/docs/notifications/react).
 
 ## Not included (yet)
