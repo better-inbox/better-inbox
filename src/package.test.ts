@@ -13,8 +13,8 @@ describe("package.json", () => {
     peerDependenciesMeta?: Record<string, { optional?: boolean }>;
   };
 
-  it("is 0.11.0 on the better-auth 1.7.7 baseline", () => {
-    expect(pkg.version).toBe("0.11.0");
+  it("is 0.11.1 on the better-auth 1.7.7 baseline", () => {
+    expect(pkg.version).toBe("0.11.1");
     expect(pkg.peerDependencies?.["better-auth"]).toBe("^1.7.7");
     // emit imports @better-auth/core/context at runtime
     expect(pkg.peerDependencies?.["@better-auth/core"]).toBe("^1.7.7");
@@ -24,8 +24,8 @@ describe("package.json", () => {
     expect(pkg.dependencies?.["@byo-oss/core"]).toBe("^0.1.0");
   });
 
-  it("ships the ./mailer entry and depends on @byo-oss/mailer 0.1.1+", () => {
-    expect(pkg.dependencies?.["@byo-oss/mailer"]).toBe("^0.1.1");
+  it("ships the ./mailer entry and depends on @byo-oss/mailer 0.2+", () => {
+    expect(pkg.dependencies?.["@byo-oss/mailer"]).toBe("^0.2.0");
     expect(pkg.exports?.["./mailer"]).toEqual({
       types: "./dist/mailer.d.ts",
       import: "./dist/mailer.js",

@@ -1,6 +1,6 @@
 {
   "name": "@byo-oss/notifications",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "In-app notifications for better-auth apps. One plugin, one migration, one component — notifications live in your database, addressed to your users.",
   "license": "MIT",
   "author": "Jarod Stewart",
@@ -57,7 +57,7 @@
   },
   "peerDependencies": {
     "@better-auth/core": "^1.7.7",
-    "@wraps.dev/email": ">=0.15.0",
+    "@wraps.dev/email": ">=0.15.1",
     "better-auth": "^1.7.7",
     "react": ">=18",
     "vitest": ">=3"
@@ -75,7 +75,7 @@
   },
   "dependencies": {
     "@byo-oss/core": "^0.1.0",
-    "@byo-oss/mailer": "^0.1.1",
+    "@byo-oss/mailer": "^0.2.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -84,7 +84,7 @@
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@wraps.dev/email": "^0.15.0",
+    "@wraps.dev/email": "^0.15.1",
     "better-auth": "1.7.7",
     "happy-dom": "^20.10.6",
     "react-dom": "^19.2.7",
